@@ -58,3 +58,6 @@ One-time setup: *Settings → Pages → Source: GitHub Actions*.
 | `py/reader.py` | file reading (SciFiReaders), flattening, contrast, display data; plain Python |
 | `py/compat.py` | stubs heavy optional imports of sidpy/SciFiReaders so they import in Pyodide |
 | `tools/build_wheels.py`, `tools/wheels.txt` | build/download the pure-Python wheels into `wheels/` |
+
+
+test comment
