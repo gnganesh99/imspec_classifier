@@ -2,3 +2,8 @@
 .env/
 __pycache__/
 .ipynb_checkpoints/
+to_ignore/
+.claude/
+.codex/
+
+wheels/

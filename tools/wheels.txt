@@ -1,0 +1,6 @@
+# Pure-Python wheels served from wheels/ (not in the Pyodide distribution).
+# numpy, pillow, pyyaml, packaging, toolz, cloudpickle come from Pyodide itself (see worker.js).
+sidpy==0.12.9
+dask==2026.8.0
+dill==0.4.1
+tifffile==2026.3.3

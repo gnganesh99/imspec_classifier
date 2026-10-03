@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPM Labeler</title>
+<link rel="stylesheet" href="vendor/uPlot.min.css">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #677085; --border: #dde1e8;
+    --accent: #2f6fde; --accent-text: #ffffff; --warn-bg: #fff1d6; --warn: #8a5a00;
+    --nodata: #c9ced8; --good: #1f8a4c; --bad: #c43d3d; --kbd: #eef0f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181e; --panel: #1d2129; --text: #e4e7ee; --muted: #9099ab; --border: #2e3440;
+      --accent: #5b8ff0; --accent-text: #0d1117; --warn-bg: #3d3018; --warn: #f0c060;
+      --nodata: #3a404c; --good: #4cc27c; --bad: #ec6b6b; --kbd: #2a2f3a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+         display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--border);
+           background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  #folder { color: var(--muted); }
+  #progress { margin-left: auto; font-variant-numeric: tabular-nums; }
+  #status { color: var(--muted); font-size: 13px; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #stage { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+           padding: 16px; gap: 8px; position: relative; }
+  #canvasWrap { display: flex; align-items: flex-end; gap: 10px; }
+  #img { image-rendering: pixelated; background: var(--nodata); box-shadow: 0 0 0 1px var(--border); }
+  #cbar { display: flex; flex-direction: column; align-items: flex-start; font-size: 12px; color: var(--muted);
+          font-variant-numeric: tabular-nums; }
+  #cbar canvas { width: 14px; height: 160px; box-shadow: 0 0 0 1px var(--border); margin: 4px 0; }
+  #scale { font-size: 12px; color: var(--muted); }
+  #plot { width: 100%; }
+  #message { color: var(--muted); text-align: center; max-width: 520px; }
+  #message h2 { color: var(--text); font-size: 20px; margin: 0 0 8px; }
+  aside { width: 290px; flex: none; border-left: 1px solid var(--border); background: var(--panel); padding: 14px;
+          overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .file { font-weight: 600; word-break: break-all; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .row { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  select, input[type=text] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+                             border-radius: 6px; padding: 5px 8px; width: 100%; }
+  input[type=range] { width: 100%; }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { flex: 1; border: 0; border-radius: 0; background: transparent; }
+  .seg button.on { background: var(--accent); color: var(--accent-text); }
+  button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+           padding: 6px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); padding: 9px 18px; }
+  .labels { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .labels button { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 9px 10px; }
+  .labels button.good { border-color: var(--good); }
+  .labels button.bad { border-color: var(--bad); }
+  kbd { font: 11px ui-monospace, monospace; background: var(--kbd); border: 1px solid var(--border); border-radius: 4px;
+        padding: 0 5px; color: var(--muted); }
+  .hd { display: flex; align-items: center; gap: 4px; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 9px; background: var(--warn-bg);
+           color: var(--warn); margin-left: 6px; vertical-align: middle; }
+  .keys { font-size: 12px; color: var(--muted); display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; }
+  .actions { display: flex; gap: 6px; }
+  .actions button { flex: 1; }
+  #noteChip { font-size: 12px; background: var(--kbd); border-radius: 6px; padding: 4px 8px; word-break: break-word; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);
+           padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.show { opacity: .95; }
+  .hidden { display: none !important; }
+  @media (max-width: 720px) {
+    main { flex-direction: column; }
+    aside { width: auto; border-left: 0; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>SPM Labeler</h1>
+  <span id="folder"></span>
+  <span id="status">Starting…</span>
+  <span id="progress"></span>
+</header>
+<main>
+  <section id="stage">
+    <div id="message">
+      <h2>Label SPM data and images in a local folder</h2>
+      <p>Nanonis <code>.sxm</code>, <code>.dat</code>, <code>.3ds</code> and jpg / png / tif / bmp images.
+         Labels go to <code>classified/classification_log.csv</code> in the folder you pick;
+         files are copied to <code>classified/&lt;label&gt;/</code>.</p>
+      <p><button id="openBtn" class="primary">Open folder</button>
+         <button id="reopenBtn" class="hidden"></button></p>
+      <p id="browserWarn" class="hidden">This browser cannot open local folders. Please use Chrome or Edge.</p>
+    </div>
+    <div id="canvasWrap" class="hidden">
+      <canvas id="img"></canvas>
+      <div id="cbar"><span id="cbarMax"></span><canvas id="cbarCanvas" width="1" height="256"></canvas><span id="cbarMin"></span></div>
+    </div>
+    <div id="scale" class="hidden"></div>
+    <div id="plot" class="hidden"></div>
+  </section>
+  <aside id="side" class="hidden">
+    <div>
+      <div class="file" id="fileName"></div>
+      <div class="sub" id="fileInfo"></div>
+    </div>
+    <label class="row"><span class="hd">Channel <kbd>↑</kbd><kbd>↓</kbd>
+      <span id="fallback" class="badge hidden" title="This file lacks the selected channel; showing its first channel">fallback</span></span>
+      <select id="channel"></select>
+    </label>
+    <div class="row" id="dirRow"><span class="hd sub">Direction <kbd>D</kbd></span><div class="seg" id="direction">
+      <button data-dir="forward">Forward</button><button data-dir="backward">Backward</button></div></div>
+    <label class="row" id="flattenRow"><span class="hd">Flatten <kbd>F</kbd></span>
+      <select id="flatten">
+        <option value="none">none</option><option value="offset">line offset</option>
+        <option value="line">line fit</option><option value="plane">plane</option>
+      </select></label>
+    <label class="row" id="cmapRow"><span class="hd">Colormap <kbd>C</kbd></span><select id="cmap"></select></label>
+    <label class="row" id="sliceRow"><span class="hd">Slice <kbd>,</kbd><kbd>.</kbd> <span id="sliceText"></span></span>
+      <input type="range" id="slice" min="0" max="0" step="1"></label>
+    <div class="labels" id="labelButtons"></div>
+    <div id="noteBox" class="hidden"><input type="text" id="note" placeholder="Note for this file, Enter to keep"></div>
+    <div id="noteChip" class="hidden"></div>
+    <div class="actions">
+      <button id="skipBtn">Skip <kbd>Space</kbd></button>
+      <button id="undoBtn">Undo <kbd>Z</kbd></button>
+    </div>
+    <div class="keys" id="keys"></div>
+  </aside>
+</main>
+<div id="toast"></div>
+<script src="vendor/uPlot.iife.min.js"></script>
+<script src="vendor/colormaps.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
