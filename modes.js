@@ -233,7 +233,8 @@ function modeKey(e) {
 
 // --------------------------------------------------------------------------- settings (labeler.json)
 async function writeJson(name, obj) {
-  const fh = await state.dir.getFileHandle(name, { create: true });
+  const dir = await state.dir.getDirectoryHandle(LOG_DIR, { create: true });   // classified/
+  const fh = await dir.getFileHandle(name, { create: true });
   const w = await fh.createWritable();
   await w.write(JSON.stringify(obj, null, 2) + "\n");
   await w.close();

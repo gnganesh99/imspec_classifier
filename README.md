@@ -55,7 +55,7 @@ Output, inside the chosen folder:
 
 Pick the mode in the header, top left (**Binary** by default, **Multiclass** or **Score**). The settings box under
 **Tools → Labeling settings** shows only the options of the current mode, validated while you type; *Save to folder*
-writes them to `labeler.json` in the data folder (loaded when you open the folder again, together with the last mode).
+writes them to `classified/labeler.json` (loaded when you open the folder again, together with the last mode). Nothing else is written to the data folder itself; a `labeler.json` left there by an earlier version is still read if `classified/` has none.
 
 | Mode | Settings box | Written to the log |
 | --- | --- | --- |

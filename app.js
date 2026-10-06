@@ -115,14 +115,21 @@ async function openFolder(handle) {
   goTo(nextUndone(0));
 }
 
+// settings live in classified/ (nothing else is written to the data folder). A labeler.json left in the data
+// folder by an earlier version is still read when there is none in classified/, and is never changed or deleted.
 async function readJson(name) {
-  try {
-    const f = await (await state.dir.getFileHandle(name)).getFile();
-    return JSON.parse(await f.text());
-  } catch (e) {
-    if (e.name !== "NotFoundError") toast(`${name} ignored: ${e.message}`);
-    return {};
+  const dirs = [];
+  try { dirs.push(await state.dir.getDirectoryHandle(LOG_DIR)); } catch {}
+  dirs.push(state.dir);
+  for (const dir of dirs) {
+    try {
+      const f = await (await dir.getFileHandle(name)).getFile();
+      return JSON.parse(await f.text());
+    } catch (e) {
+      if (e.name !== "NotFoundError") { toast(`${name} ignored: ${e.message}`); return {}; }
+    }
   }
+  return {};
 }
 
 function naturalCompare(a, b) {
