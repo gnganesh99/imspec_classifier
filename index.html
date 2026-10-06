@@ -41,7 +41,7 @@
            padding: 16px 64px; gap: 8px; position: relative; }
   #canvasWrap { display: flex; align-items: flex-end; gap: 10px; }
   #img { image-rendering: pixelated; background: var(--nodata); box-shadow: 0 0 0 1px var(--border); }
-  #cbar { display: flex; flex-direction: column; align-items: flex-start; font-size: 12px; color: var(--muted);
+  #cbar { display: flex; flex-direction: column; align-items: flex-start; font-size: 15px; color: var(--muted);
           font-variant-numeric: tabular-nums; }
   #cbar canvas { width: 14px; height: 160px; box-shadow: 0 0 0 1px var(--border); margin: 4px 0; }
   #scale { font-size: 12px; color: var(--muted); }
@@ -104,7 +104,7 @@
   #imgBox { position: relative; line-height: 0; }
   #imgBox.drawmode #img { cursor: crosshair; }
   #axes { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible;
-          color: var(--muted); font: 11px system-ui, sans-serif; }
+          color: var(--muted); font: 14px system-ui, sans-serif; }
   #tip { position: fixed; z-index: 20; pointer-events: none; background: var(--text); color: var(--bg); font-size: 12px;
          line-height: 1.35; padding: 4px 8px; border-radius: 6px; white-space: pre; opacity: .92;
          font-variant-numeric: tabular-nums; }
@@ -120,6 +120,8 @@
                        border-radius: 6px; padding: 5px 8px; width: 90px; }
   #modeBox { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
   #modeBox select { width: auto; font-size: 13px; font-weight: 600; }
+  .clip { display: flex; align-items: center; gap: 8px; }
+  .clip button { padding: 3px 9px; font-size: 12px; }
   #profPlot { width: 100%; }
   #cfgText { width: 100%; font: 12px/1.4 ui-monospace, monospace; color: var(--text); background: var(--bg);
              border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; margin: 6px 0; }
@@ -194,12 +196,10 @@
       <h3>View</h3>
       <p class="sub">Only the image is transformed; the axis ticks keep their meaning (x to the right, y upwards).
         Remembered per file type.</p>
-      <label class="row" id="flattenRow"><span class="hd">Flatten <kbd>F</kbd></span>
-      <select id="flatten">
-        <option value="none">none</option><option value="offset">line offset</option>
-        <option value="line">line fit</option><option value="plane">plane</option>
-      </select></label>
       <label class="row" id="cmapRow"><span class="hd">Colormap <kbd>C</kbd></span><select id="cmap"></select></label>
+      <div class="row" id="clipRow"><span class="hd">Contrast <span id="clipText" class="sub"></span></span>
+        <div class="clip"><input type="range" id="vClip" min="0" max="10" step="0.1" value="1">
+          <button id="vClipReset" title="Back to the default (1 % clipped at each end)">Reset</button></div></div>
       <label class="chk"><input type="checkbox" id="vTranspose"> Transpose</label>
       <label class="row"><span class="hd">Origin</span>
         <select id="vOrigin">
@@ -215,6 +215,11 @@
     </section>
     <section id="toolsPanel" class="hidden">
       <h3>Tools</h3>
+      <label class="row" id="flattenRow"><span class="hd">Flatten <kbd>F</kbd></span>
+      <select id="flatten">
+        <option value="none">none</option><option value="offset">line offset</option>
+        <option value="line">line fit</option><option value="plane">plane</option>
+      </select></label>
       <details id="profBox">
         <summary>Line profile</summary>
         <div class="tool">
@@ -261,7 +266,7 @@
     </label>
     <div class="row" id="dirRow"><span class="hd sub">Direction <kbd>B</kbd></span><div class="seg" id="direction">
       <button data-dir="forward">Forward</button><button data-dir="backward">Backward</button></div></div>
-    <label class="row" id="sliceRow"><span class="hd">Slice <kbd>,</kbd><kbd>.</kbd> <span id="sliceText"></span></span>
+    <label class="row" id="sliceRow"><span class="hd">Slice <kbd>PgUp</kbd><kbd>PgDn</kbd> <span id="sliceText"></span></span>
       <input type="range" id="slice" min="0" max="0" step="1"></label>
     <label class="row" id="copyRow"><span class="hd">Copy to classified/&lt;label&gt;/</span>
       <select id="copyAs">

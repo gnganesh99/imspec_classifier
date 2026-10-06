@@ -33,10 +33,10 @@ row (or press Enter in the search box) to jump there. Jumping does not label any
 
 **View** and **Tools** (buttons in the header) open panels to the left of the sidebar:
 
-- *View*: **Flatten**, **Colormap** (also `F` / `C`), **Theme** (Auto / Light / Dark), **Transpose**, **Origin** (auto / upper / lower) and **Scale** (axis ticks / scale bar / none). Only the image
+- *View*: **Colormap** (also `C`), **Contrast** slider (percent clipped at each end, default 1 %, 0 = full range; the colorbar follows), **Theme** (Auto / Light / Dark), **Transpose**, **Origin** (auto / upper / lower) and **Scale** (axis ticks / scale bar / none). Only the image
   is transformed; the axis ticks keep their meaning (x to the right, y upwards), so you can correct a mixed-up
   convention without changing the coordinates. Remembered per file type. A scale bar is also drawn on jpeg copies.
-- *Tools*: **Line profile** (a drop down; open it, turn on *Draw line*, drag on an image; values in the channel's units vs distance; averaging
+- *Tools*: **Flatten** (also `F`), **Line profile** (a drop down; open it, turn on *Draw line*, drag on an image; values in the channel's units vs distance; averaging
   width in px, default 5; *Export profile as CSV*; `Esc` clears the line), **Pixel readout** (position and value
   follow the cursor), and **Metadata** (key facts from the file header plus a searchable list of all fields).
 

@@ -41,9 +41,30 @@ function buildDisplay(view, s) {
   return { rows, cols, vals, rgb };
 }
 
-function paintImage(imageData, disp, view, table) {
+// Colour range of an image. The default (1 % clipped at each end) is the range the Python side computed; the View
+// panel's contrast slider changes the clipped percentage (0 = full range), taken from the sorted pixel values.
+const DEFAULT_CLIP = 1;
+function contrastRange(view, s) {
+  const clip = s.clip ?? DEFAULT_CLIP;
+  if (clip === DEFAULT_CLIP) return { vmin: view.vmin, vmax: view.vmax };
+  if (!view._sorted) {
+    const a = f32(view), f = new Float32Array(a.length);
+    let n = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] === a[i]) f[n++] = a[i];
+    view._sorted = f.subarray(0, n).sort();
+  }
+  const v = view._sorted;
+  if (!v.length) return { vmin: view.vmin, vmax: view.vmax };
+  const at = (p) => v[clamp(Math.round(p * (v.length - 1)), 0, v.length - 1)];
+  let lo = at(clip / 100), hi = at(1 - clip / 100);
+  if (!(hi > lo)) { lo = v[0]; hi = v[v.length - 1]; }
+  return { vmin: lo, vmax: hi };
+}
+
+function paintImage(imageData, disp, range, table) {
   const px = imageData.data, v = disp.vals;
   if (disp.rgb) { px.set(v); return; }
+  const view = range;   // { vmin, vmax }
   const span = (view.vmax - view.vmin) || 1;
   for (let i = 0, j = 0; i < v.length; i++, j += 4) {
     const x = v[i];
@@ -90,32 +111,32 @@ function drawOverlay() {
 
   if (s.scale === "ticks") {
     const axis = (max, size, horizontal) => {
-      const { ticks, step } = niceTicks(max);
+      const { ticks, step } = niceTicks(max, clamp(Math.floor(size / (horizontal ? 75 : 50)), 2, 8));   // fewer ticks on a small image
       const dec = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
       for (const v of ticks) {
         if (horizontal) {
           const x = L + (W * v) / max;
           svg.append(svgEl("line", { x1: x, x2: x, y1: T + H, y2: T + H + 4, stroke: "currentColor" }),
-                     svgEl("text", { x, y: T + H + 16, "text-anchor": "middle", fill: "currentColor" }, v.toFixed(dec)));
+                     svgEl("text", { x, y: T + H + 19, "text-anchor": "middle", fill: "currentColor" }, v.toFixed(dec)));
         } else {
           const y = T + H * (1 - v / max);
           svg.append(svgEl("line", { x1: L - 4, x2: L, y1: y, y2: y, stroke: "currentColor" }),
-                     svgEl("text", { x: L - 7, y: y + 4, "text-anchor": "end", fill: "currentColor" }, v.toFixed(dec)));
+                     svgEl("text", { x: L - 8, y: y + 5, "text-anchor": "end", fill: "currentColor" }, v.toFixed(dec)));
         }
       }
     };
     axis(ex, W, true);
     axis(ey, H, false);
-    svg.append(svgEl("text", { x: L + W / 2, y: T + H + 31, "text-anchor": "middle", fill: "currentColor" }, `x (${eu})`),
-               svgEl("text", { x: 11, y: T + H / 2, "text-anchor": "middle", fill: "currentColor",
-                               transform: `rotate(-90 11 ${T + H / 2})` }, `y (${eu})`));
+    svg.append(svgEl("text", { x: L + W / 2, y: T + H + 40, "text-anchor": "middle", fill: "currentColor" }, `x (${eu})`),
+               svgEl("text", { x: 14, y: T + H / 2, "text-anchor": "middle", fill: "currentColor",
+                               transform: `rotate(-90 14 ${T + H / 2})` }, `y (${eu})`));
   } else if (s.scale === "bar") {
     const { frac, text } = scaleBarSpec(view);
     const x1 = L + W * 0.96, x0 = x1 - W * frac, y = T + H * 0.93;
     svg.append(svgEl("rect", { x: x0 - 1, y: y - 3, width: x1 - x0 + 2, height: 6, fill: "#000", opacity: 0.7 }),
                svgEl("rect", { x: x0, y: y - 2, width: x1 - x0, height: 4, fill: "#fff" }),
-               svgEl("text", { x: (x0 + x1) / 2, y: y - 8, "text-anchor": "middle", fill: "#fff", stroke: "#000",
-                               "stroke-width": 3, "paint-order": "stroke", "font-size": 12, "font-weight": 600 }, text));
+               svgEl("text", { x: (x0 + x1) / 2, y: y - 9, "text-anchor": "middle", fill: "#fff", stroke: "#000",
+                               "stroke-width": 3, "paint-order": "stroke", "font-size": 15, "font-weight": 600 }, text));
   }
 
   const ln = state.line;
@@ -136,12 +157,12 @@ function drawScaleBarOnCanvas(ctx, view, W, H) {
   ctx.fillRect(x0 - k, y - 3 * k, x1 - x0 + 2 * k, 6 * k);
   ctx.fillStyle = "#fff";
   ctx.fillRect(x0, y - 2 * k, x1 - x0, 4 * k);
-  ctx.font = `600 ${12 * k}px system-ui, sans-serif`;
+  ctx.font = `600 ${15 * k}px system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.lineWidth = 3 * k;
   ctx.strokeStyle = "#000";
-  ctx.strokeText(text, (x0 + x1) / 2, y - 8 * k);
-  ctx.fillText(text, (x0 + x1) / 2, y - 8 * k);
+  ctx.strokeText(text, (x0 + x1) / 2, y - 9 * k);
+  ctx.fillText(text, (x0 + x1) / 2, y - 9 * k);
 }
 
 // --------------------------------------------------------------------------- pixel readout
@@ -334,6 +355,10 @@ function renderMeta(note) {
 // --------------------------------------------------------------------------- panels
 // called by draw() after every redraw
 function syncPanels(view, s) {
+  const clip = s.clip ?? DEFAULT_CLIP;
+  $("vClip").value = clip;
+  $("clipText").textContent = clip === 0 ? "(full range)" : `(${clip}% clipped at each end)`;
+  $("clipRow").classList.toggle("hidden", view.kind !== "image" && view.kind !== "cube");
   $("vTranspose").checked = !!s.transpose;
   $("vOrigin").value = s.origin;
   for (const b of $("vScale").children) b.classList.toggle("on", b.dataset.scale === s.scale);
@@ -370,6 +395,14 @@ function initTools() {
   $("viewBtn").onclick = (e) => { panels.view = !panels.view; setPanels(); e.currentTarget.blur(); };
   $("toolsBtn").onclick = (e) => { panels.tools = !panels.tools; setPanels(); e.currentTarget.blur(); };
 
+  let clipTimer = 0;   // redraw at most every ~30 ms while the slider moves
+  $("vClip").oninput = (e) => {
+    const value = +e.target.value;
+    clearTimeout(clipTimer);
+    clipTimer = setTimeout(() => changeView({ clip: value }), 30);
+  };
+  $("vClip").onchange = (e) => e.target.blur();
+  $("vClipReset").onclick = (e) => { changeView({ clip: DEFAULT_CLIP }); e.currentTarget.blur(); };
   $("vTranspose").onchange = (e) => { changeView({ transpose: e.target.checked }); e.target.blur(); };
   $("vOrigin").onchange = (e) => { changeView({ origin: e.target.value }); e.target.blur(); };
   for (const b of $("vScale").children) b.onclick = () => { changeView({ scale: b.dataset.scale }); b.blur(); };

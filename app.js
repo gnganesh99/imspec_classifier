@@ -67,7 +67,7 @@ function loadSettings() {
   const out = {};
   for (const t of Object.keys(DEFAULT_SETTINGS)) {
     out[t] = { channel: null, direction: "forward", flatten: "none", cmap: "viridis", index: null,
-               transpose: false, origin: "auto", scale: "ticks",   // View panel: display only, no re-render
+               transpose: false, origin: "auto", scale: "ticks", clip: 1,   // View panel: display only, no re-render
                ...DEFAULT_SETTINGS[t], ...(saved[t] || {}) };
   }
   return out;
@@ -309,17 +309,18 @@ function drawImage(view, s) {
   c.height = disp.rows;
   const ctx = c.getContext("2d");
   const img = ctx.createImageData(disp.cols, disp.rows);
-  paintImage(img, disp, view, (lutCache[s.cmap] ||= lut(s.cmap)));
-  if (view.kind !== "rgb") drawColorbar(s.cmap, view);
+  const range = view.kind === "rgb" ? null : contrastRange(view, s);
+  paintImage(img, disp, range, (lutCache[s.cmap] ||= lut(s.cmap)));
+  if (range) drawColorbar(s.cmap, view, range);
   ctx.putImageData(img, 0, 0);
 
   // fit the stage, keeping the physical aspect ratio; axis ticks need room around the image
   const ticks = s.scale === "ticks";
-  const pad = (state.pad = { l: ticks ? 58 : 0, t: ticks ? 8 : 0, r: ticks ? 14 : 0, b: ticks ? 38 : 0 });
+  const pad = (state.pad = { l: ticks ? 70 : 0, t: ticks ? 10 : 0, r: ticks ? 16 : 0, b: ticks ? 50 : 0 });
   $("imgBox").style.padding = `${pad.t}px ${pad.r}px ${pad.b}px ${pad.l}px`;
   const stage = $("stage");
   const plotH = view.spectrum ? 220 : 0;
-  const maxW = stage.clientWidth - GUTTER - (view.kind === "rgb" ? 0 : 90) - pad.l - pad.r;
+  const maxW = stage.clientWidth - GUTTER - (view.kind === "rgb" ? 0 : 112) - pad.l - pad.r;
   const maxH = stage.clientHeight - 64 - plotH - pad.t - pad.b;
   const aspect = view.extent[0] / view.extent[1] || view.w / view.h;
   let w = Math.max(50, maxW), h = w / aspect;
@@ -333,7 +334,7 @@ function drawImage(view, s) {
   drawOverlay();
 }
 
-function drawColorbar(cmap, view) {
+function drawColorbar(cmap, view, range) {
   const c = $("cbarCanvas");
   const ctx = c.getContext("2d");
   const table = (lutCache[cmap] ||= lut(cmap));
@@ -342,8 +343,8 @@ function drawColorbar(cmap, view) {
     ctx.fillRect(0, 255 - i, 1, 1);
   }
   const u = view.units ? " " + view.units : "";
-  $("cbarMax").textContent = fmt(view.vmax) + u;
-  $("cbarMin").textContent = fmt(view.vmin) + u;
+  $("cbarMax").textContent = fmt(range.vmax) + u;
+  $("cbarMin").textContent = fmt(range.vmin) + u;
 }
 
 function drawPlot(spec, marker, below) {
