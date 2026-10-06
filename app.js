@@ -416,7 +416,7 @@ function updateProgress() {
 function setupFileList() {
   const filter = $("fileFilter");
   const options = [["__all", "All files"], ["__unlabeled", "Unlabeled"],
-                   ...[...state.config.classes.slice(0, 9), DEFER_LABEL].map((c) => [c, c])];
+                   ...[...binaryClasses(), DEFER_LABEL].map((c) => [c, c])];
   filter.replaceChildren(...options.map(([v, t]) => new Option(t, v)));
   $("fileSearch").value = "";
 }
@@ -457,15 +457,18 @@ function renderFileList() {
 }
 
 // --------------------------------------------------------------------------- labeling
+// Binary mode (the only mode for now): two classes, keys 1 (first, Good) and 0 (second, Bad), plus Defer on D.
+// Any further entries in labeler.json "classes" are ignored.
+function binaryClasses() { return state.config.classes.slice(0, 2); }
+const BINARY_KEYS = [["→", "1"], ["←", "0"]];   // [arrow, number] per class
+
 function buildLabelButtons() {
   const wrap = $("labelButtons");
   wrap.replaceChildren();
-  const classes = state.config.classes;
-  classes.slice(0, 9).forEach((cls, i) => {
+  const classes = binaryClasses();
+  classes.forEach((cls, i) => {
     const b = document.createElement("button");
-    const keys = [String(i + 1)];
-    if (i === 0 && classes.length >= 2) keys.unshift("→");
-    if (i === 1) keys.unshift("←");
+    const keys = BINARY_KEYS[i];
     b.innerHTML = `<span></span><span>${keys.map((k) => `<kbd>${k}</kbd>`).join("")}</span>`;
     b.firstChild.textContent = cls;
     if (classes.length >= 2 && i < 2) b.className = i === 0 ? "good" : "bad";
@@ -696,13 +699,14 @@ function onKey(e) {
   }
   if (tag === "INPUT" && e.target.type !== "range" && e.target.type !== "checkbox") return;
   if (!state.dir || e.ctrlKey && e.key !== "z" || e.metaKey || e.altKey) return;
-  const classes = state.config.classes;
+  const classes = binaryClasses();
   const view = state.current && state.current.view;
   const s = state.current && state.settings[state.current.type];
   let handled = true;
   if (e.key === "ArrowRight" && classes.length >= 2) label(classes[0]);
   else if (e.key === "ArrowLeft" && classes.length >= 2) label(classes[1]);
-  else if (/^[1-9]$/.test(e.key) && classes[+e.key - 1]) label(classes[+e.key - 1]);
+  else if (e.key === "1" && classes[0]) label(classes[0]);
+  else if (e.key === "0" && classes[1]) label(classes[1]);
   else if (e.key === "ArrowUp") cycleChannel(-1);
   else if (e.key === "ArrowDown") cycleChannel(1);
   else if (e.key === "Escape") { if (state.line) clearLine(); }

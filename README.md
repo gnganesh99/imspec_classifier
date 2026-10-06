@@ -14,7 +14,7 @@ and `jpg / png / tif / bmp / gif / webp` images.
 | --- | --- |
 | `→` / `←` | first / second class (default *Good* / *Bad*) |
 | `D` | defer: logged as `Deferred`, copied to `classified/deferred/` |
-| `1`–`9` | class 1–9 |
+| `1` / `0` | first class (*Good*) / second class (*Bad*); no other number key does anything |
 | `Space` | skip (stays unlabeled) |
 | `[` / `]` | previous / next file, labeled or not (also the ‹ › buttons beside the image); a labeled file shows its label, and pressing a label key **overwrites** it |
 | `Home` / `End` | first / last file |
@@ -50,7 +50,7 @@ Output, inside the chosen folder:
 Optional `labeler.json` in the folder:
 
 ```json
-{ "classes": ["Good", "Bad", "Unsure"], "notes": true, "copy_as": "none" }   // none | original | image
+{ "classes": ["Keep", "Reject"], "notes": true, "copy_as": "none" }   // none | original | image
 ```
 
 ### Run locally (e.g. offline lab PC)
