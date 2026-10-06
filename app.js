@@ -96,10 +96,18 @@ async function openFolder(handle) {
   for await (const [name, h] of handle.entries()) {
     if (h.kind === "file" && SUPPORTED.test(name)) files.push(name);
   }
-  state.files = files.sort(naturalCompare);
+  // oldest first by modified time (the browser does not expose creation time); name breaks ties
+  state.mtimes = new Map();
+  for (let i = 0; i < files.length; i += 100) {
+    await Promise.all(files.slice(i, i + 100).map(async (n) => {
+      state.mtimes.set(n, (await (await handle.getFileHandle(n)).getFile()).lastModified);
+    }));
+  }
+  state.files = files.sort((a, b) => state.mtimes.get(a) - state.mtimes.get(b) || naturalCompare(a, b));
   setLabels(await readLog());
   viewCache.clear();
   buildLabelButtons();
+  setupFileList();
   $("message").classList.add("hidden");
   $("side").classList.remove("hidden");
   if (!state.files.length) return showMessage("No supported files in this folder", "");
@@ -149,12 +157,13 @@ async function goTo(pos) {
   state.gen++;
   worker.postMessage({ op: "cancel", gen: state.gen });
   updateProgress();
+  renderFileList();
   if (pos >= state.files.length) return showEnd();
   const name = state.files[pos];
   const type = fileType(name);
   state.current = { name, type, key: null, summary: null, view: null };
   $("fileName").textContent = name;
-  $("fileInfo").textContent = `${pos + 1} of ${state.files.length} · ${type === "img" ? "image" : "." + type}`;
+  $("fileInfo").textContent = `${pos + 1} of ${state.files.length} · ${type === "img" ? "image" : "." + type} · ${localTimestamp(new Date(state.mtimes.get(name)))}`;
   showLabelInfo(name);
   try {
     const res = await fetchView(name, state.settings[type], 0);
@@ -391,6 +400,51 @@ function updateProgress() {
   $("nextBtn").disabled = state.pos >= state.files.length - 1;
 }
 
+// --------------------------------------------------------------------------- file list
+// searchable list of all files, oldest first, with their labels; click a row to jump there
+function setupFileList() {
+  const filter = $("fileFilter");
+  const options = [["__all", "All files"], ["__unlabeled", "Unlabeled"],
+                   ...[...state.config.classes.slice(0, 9), DEFER_LABEL].map((c) => [c, c])];
+  filter.replaceChildren(...options.map(([v, t]) => new Option(t, v)));
+  $("fileSearch").value = "";
+}
+
+function labelClass(label) {
+  const classes = state.config.classes;
+  if (label === DEFER_LABEL) return "defer";
+  if (classes.length >= 2 && label === classes[0]) return "good";
+  if (classes.length >= 2 && label === classes[1]) return "bad";
+  return "";
+}
+
+function renderFileList() {
+  if (!$("fileListBox").open) return;
+  const q = $("fileSearch").value.trim().toLowerCase(), f = $("fileFilter").value;
+  const frag = document.createDocumentFragment();
+  let shown = 0, curRow = null;
+  state.files.forEach((name, i) => {
+    const r = state.labels.get(name), lab = r ? r.label : "";
+    if (f === "__unlabeled" ? lab : f !== "__all" && lab !== f) return;
+    if (q && !name.toLowerCase().includes(q) && !lab.toLowerCase().includes(q)) return;
+    const row = document.createElement("div");
+    row.className = "frow" + (i === state.pos ? " cur" : "");
+    row.dataset.i = i;
+    row.title = localTimestamp(new Date(state.mtimes.get(name)));
+    const n = document.createElement("span"), nm = document.createElement("span"), chip = document.createElement("span");
+    n.className = "n"; n.textContent = i + 1;
+    nm.className = "nm"; nm.textContent = name;
+    chip.className = "chip " + labelClass(lab); chip.textContent = lab || "–";
+    row.append(n, nm, chip);
+    frag.append(row);
+    if (i === state.pos) curRow = row;
+    shown++;
+  });
+  $("fileList").replaceChildren(frag);
+  $("fileCount").textContent = `${shown} / ${state.files.length}`;
+  if (curRow) curRow.scrollIntoView({ block: "nearest" });
+}
+
 // --------------------------------------------------------------------------- labeling
 function buildLabelButtons() {
   const wrap = $("labelButtons");
@@ -486,8 +540,8 @@ function queueIO(fn, errorText) {
   return ioChain;
 }
 
-function localTimestamp() {
-  const d = new Date(), p = (n) => String(n).padStart(2, "0");
+function localTimestamp(d = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
@@ -726,6 +780,19 @@ async function lastHandle() {
   $("channel").onchange = (e) => { changeSetting({ channel: e.target.value }); e.target.blur(); };
   $("flatten").onchange = (e) => { changeSetting({ flatten: e.target.value }); e.target.blur(); };
   $("cmap").onchange = (e) => { changeSetting({ cmap: e.target.value }); e.target.blur(); };
+  $("fileListBox").ontoggle = renderFileList;
+  $("fileSearch").oninput = renderFileList;
+  $("fileSearch").onkeydown = (e) => {
+    if (e.key === "Enter") {   // jump to the first match
+      const first = $("fileList").firstElementChild;
+      if (first) { goTo(+first.dataset.i); e.target.blur(); }
+    } else if (e.key === "Escape") e.target.blur();
+  };
+  $("fileFilter").onchange = (e) => { renderFileList(); e.target.blur(); };
+  $("fileList").onclick = (e) => {
+    const row = e.target.closest(".frow");
+    if (row) goTo(+row.dataset.i);
+  };
   const showTheme = () => {
     const t = document.documentElement.dataset.theme || "";
     for (const b of $("theme").children) b.classList.toggle("on", b.dataset.theme === t);

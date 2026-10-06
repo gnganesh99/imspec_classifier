@@ -26,6 +26,10 @@ and `jpg / png / tif / bmp / gif / webp` images.
 | `,` `.` | slice of `.3ds` grids and tif stacks |
 | `N` | note, attached to the next label |
 
+Files are ordered **oldest first by modified time** (all types mixed; ties by name). The sidebar's **Files** list shows
+every file with its label chip; search by name or label, filter (All / Unlabeled / each class / Deferred), and click a
+row (or press Enter in the search box) to jump there. Jumping does not label anything in between.
+
 Output, inside the chosen folder:
 
 - `classified/classification_log.csv` with columns `file, type, channel, label, score, tags, note, timestamp`
