@@ -13,11 +13,12 @@ and `jpg / png / tif / bmp / gif / webp` images.
 | Key | Action |
 | --- | --- |
 | `→` / `←` | first / second class (default *Good* / *Bad*) |
+| `D` | defer: logged as `Deferred`, copied to `classified/deferred/` |
 | `1`–`9` | class 1–9 |
 | `Space` | skip (stays unlabeled) |
 | `Z` | undo the last label (removes the CSV row and the copied file) |
 | `↑` `↓` | channel (remembered per file type) |
-| `D` | forward / backward scan |
+| `B` | backward / forward scan |
 | `F` / `C` | flatten / colormap (`Shift` = backwards) |
 | `,` `.` | slice of `.3ds` grids and tif stacks |
 | `N` | note, attached to the next label |
@@ -26,14 +27,14 @@ Output, inside the chosen folder:
 
 - `classified/classification_log.csv` with columns `file, type, channel, label, score, tags, note, timestamp`
   (one row per label). Files already in the log are skipped when the folder is opened again.
-- `classified/<label>/`: a copy of each labeled file. The sidebar's *Copy* option chooses **original file** (default)
-  or **image**: a jpeg of the current view (channel, flatten and colormap as shown; the plot for spectra),
-  named `<file name>.jpg`.
+- `classified/<label>/`: copies of labeled files, depending on the sidebar's *Copy* option: **do not copy**
+  (default; only the CSV is written), **original file**, or **image**: a jpeg of the current view (channel,
+  flatten and colormap as shown; the plot for spectra, in the current light/dark theme), named `<file name>.jpg`.
 
 Optional `labeler.json` in the folder:
 
 ```json
-{ "classes": ["Good", "Bad", "Unsure"], "notes": true, "copy_files": true, "copy_as": "original" }
+{ "classes": ["Good", "Bad", "Unsure"], "notes": true, "copy_as": "none" }   // none | original | image
 ```
 
 ### Run locally (e.g. offline lab PC)

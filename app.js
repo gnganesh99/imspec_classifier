@@ -5,7 +5,9 @@
 const LOG_DIR = "classified";
 const LOG_FILE = "classification_log.csv";
 const LOG_COLUMNS = ["file", "type", "channel", "label", "score", "tags", "note", "timestamp"];
-const DEFAULT_CONFIG = { classes: ["Good", "Bad"], score: null, notes: true, copy_files: true, copy_as: null };
+const DEFER_LABEL = "Deferred";   // always available on key D; copies go to classified/deferred/
+const COPY_MODES = ["none", "original", "image"];
+const DEFAULT_CONFIG = { classes: ["Good", "Bad"], score: null, notes: true, copy_as: null };
 const SUPPORTED = /\.(sxm|dat|3ds|jpe?g|png|bmp|gif|webp|tiff?)$/i;
 const PREFETCH = 3;
 const VIEW_CACHE_SIZE = 12;
@@ -20,7 +22,7 @@ const state = {
   dir: null, config: DEFAULT_CONFIG, files: [], done: new Set(), pos: -1,
   current: null,    // {name, type, key, summary, view}
   gen: 0, note: "", workerReady: false, settings: loadSettings(),
-  copyAs: loadPref("spm-labeler-copy-as", "original"),   // "original" | "image" (jpeg of the view)
+  copyAs: loadPref("spm-labeler-copy-as", "none"),   // "none" | "original" | "image" (jpeg of the view)
 };
 const viewCache = new Map();   // `${key}|${settingsKey}` -> {summary, view}
 let ioChain = Promise.resolve();
@@ -85,8 +87,10 @@ async function openFolder(handle) {
   rememberHandle(handle);
   $("folder").textContent = handle.name;
   state.config = { ...DEFAULT_CONFIG, ...(await readJson("labeler.json")) };
-  if (["original", "image"].includes(state.config.copy_as)) setCopyAs(state.config.copy_as);
-  $("copyRow").classList.toggle("hidden", !state.config.copy_files);
+  // labeler.json: "copy_as" picks the mode; the older "copy_files": false means "none"
+  const cfgCopy = state.config.copy_files === false ? "none" : state.config.copy_as;
+  if (COPY_MODES.includes(cfgCopy)) setCopyAs(cfgCopy);
+  else if (!COPY_MODES.includes(state.copyAs)) setCopyAs("none");
   const files = [];
   for await (const [name, h] of handle.entries()) {
     if (h.kind === "file" && SUPPORTED.test(name)) files.push(name);
@@ -384,7 +388,11 @@ function buildLabelButtons() {
     b.onclick = () => label(cls);
     wrap.append(b);
   });
-  const keys = [["↑ ↓", "channel"], ["D", "forward / backward"], ["F", "flatten"], ["C", "colormap"],
+  const defer = document.createElement("button");
+  defer.innerHTML = `<span>Defer</span><span><kbd>D</kbd></span>`;
+  defer.onclick = () => label(DEFER_LABEL);
+  wrap.append(defer);
+  const keys = [["↑ ↓", "channel"], ["B", "forward / backward"], ["D", "defer (classified/deferred/)"], ["F", "flatten"], ["C", "colormap"],
                 [", .", "slice (3ds, stacks)"], ["Space", "skip"], ["Z", "undo last label"]];
   if (state.config.notes) keys.push(["N", "note for this file"]);
   $("keys").replaceChildren(...keys.flatMap(([k, d]) => {
@@ -409,13 +417,13 @@ function label(cls) {
   state.note = "";
   $("noteChip").classList.add("hidden");
   state.done.add(cur.name);
-  const copy = state.config.copy_files;
+  const mode = state.copyAs;
   // snapshot now: the canvas is redrawn for the next file before the IO runs
-  const snapshot = copy && state.copyAs === "image" ? snapshotView() : null;
+  const snapshot = mode === "image" ? snapshotView() : null;
   queueIO(async () => {
     await appendLog(row);
     if (snapshot) await writeJpeg(snapshot, jpegName(cur.name), cls);
-    else if (copy) await copyInto(cur.name, cls);
+    else if (mode === "original") await copyInto(cur.name, cls);
   }, `Could not save label for ${cur.name}`);
   toast(`${cur.name} → ${cls}`);
   goTo(nextUndone(state.pos + 1));
@@ -431,14 +439,11 @@ function undo() {
     const last = rows.pop();
     if (!last) return toast("Nothing to undo");
     await writeLog(rows);
-    if (state.config.copy_files) {
-      try {
-        const logDir = await state.dir.getDirectoryHandle(LOG_DIR);
-        const dst = await logDir.getDirectoryHandle(safeName(last.label));
-        // the copy is either the original file or its jpeg image
-        for (const n of [last.file, jpegName(last.file)]) await dst.removeEntry(n).catch(() => {});
-      } catch {}
-    }
+    try {   // remove the copy (original or jpeg), if one was made
+      const logDir = await state.dir.getDirectoryHandle(LOG_DIR);
+      const dst = await logDir.getDirectoryHandle(folderName(last.label));
+      for (const n of [last.file, jpegName(last.file)]) await dst.removeEntry(n).catch(() => {});
+    } catch {}
     state.done = new Set(rows.map((r) => r.file));
     toast(`Undid ${last.file} → ${last.label}`);
     const i = state.files.indexOf(last.file);
@@ -456,6 +461,7 @@ function localTimestamp() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+function folderName(label) { return label === DEFER_LABEL ? "deferred" : safeName(label); }
 function safeName(s) { return String(s).replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "_"; }
 
 async function logHandle(create) {
@@ -497,7 +503,7 @@ async function writeLog(rows) {
 async function copyInto(name, cls) {
   const src = await (await state.dir.getFileHandle(name)).getFile();
   const logDir = await state.dir.getDirectoryHandle(LOG_DIR, { create: true });
-  const dst = await logDir.getDirectoryHandle(safeName(cls), { create: true });
+  const dst = await logDir.getDirectoryHandle(folderName(cls), { create: true });
   const w = await (await dst.getFileHandle(name, { create: true })).createWritable();
   await w.write(src);
   await w.close();
@@ -524,7 +530,7 @@ function snapshotView() {
 async function writeJpeg(canvas, name, cls) {
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
   const logDir = await state.dir.getDirectoryHandle(LOG_DIR, { create: true });
-  const dst = await logDir.getDirectoryHandle(safeName(cls), { create: true });
+  const dst = await logDir.getDirectoryHandle(folderName(cls), { create: true });
   const w = await (await dst.getFileHandle(name, { create: true })).createWritable();
   await w.write(blob);
   await w.close();
@@ -604,8 +610,9 @@ function onKey(e) {
   else if (e.key === "ArrowDown") cycleChannel(1);
   else if (e.key === " ") skip();
   else if (e.key.toLowerCase() === "z") undo();
+  else if (e.key.toLowerCase() === "d") label(DEFER_LABEL);
   else if (!s) handled = false;
-  else if (e.key.toLowerCase() === "d" && view) changeSetting({ direction: view.direction === "forward" ? "backward" : "forward" });
+  else if (e.key.toLowerCase() === "b" && view) changeSetting({ direction: view.direction === "forward" ? "backward" : "forward" });
   else if (e.key.toLowerCase() === "f") changeSetting({ flatten: cycle(FLATTENS, s.flatten, e.shiftKey ? -1 : 1) });
   else if (e.key.toLowerCase() === "c") changeSetting({ cmap: cycle(Object.keys(COLORMAPS), s.cmap, e.shiftKey ? -1 : 1) });
   else if ((e.key === "," || e.key === ".") && view && view.kind === "cube")
@@ -685,6 +692,19 @@ async function lastHandle() {
   $("channel").onchange = (e) => { changeSetting({ channel: e.target.value }); e.target.blur(); };
   $("flatten").onchange = (e) => { changeSetting({ flatten: e.target.value }); e.target.blur(); };
   $("cmap").onchange = (e) => { changeSetting({ cmap: e.target.value }); e.target.blur(); };
+  const showTheme = () => {
+    const t = document.documentElement.dataset.theme || "";
+    for (const b of $("theme").children) b.classList.toggle("on", b.dataset.theme === t);
+  };
+  showTheme();
+  for (const b of $("theme").children) b.onclick = () => {
+    const t = b.dataset.theme;
+    if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+    try { t ? localStorage.setItem("spm-labeler-theme", t) : localStorage.removeItem("spm-labeler-theme"); } catch {}
+    showTheme();
+    b.blur();
+    if (state.current && state.current.view) draw();   // the plot reads theme colours when drawn
+  };
   $("copyAs").value = state.copyAs;
   $("copyAs").onchange = (e) => { setCopyAs(e.target.value); e.target.blur(); };
   $("slice").oninput = (e) => changeSetting({ index: +e.target.value });

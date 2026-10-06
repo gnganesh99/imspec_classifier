@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SPM Labeler</title>
 <link rel="stylesheet" href="vendor/uPlot.min.css">
+<script>try { const t = localStorage.getItem("spm-labeler-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
 <style>
   :root {
     --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #677085; --border: #dde1e8;
@@ -12,11 +13,16 @@
     --nodata: #c9ced8; --good: #1f8a4c; --bad: #c43d3d; --kbd: #eef0f4;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #15181e; --panel: #1d2129; --text: #e4e7ee; --muted: #9099ab; --border: #2e3440;
       --accent: #5b8ff0; --accent-text: #0d1117; --warn-bg: #3d3018; --warn: #f0c060;
       --nodata: #3a404c; --good: #4cc27c; --bad: #ec6b6b; --kbd: #2a2f3a;
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181e; --panel: #1d2129; --text: #e4e7ee; --muted: #9099ab; --border: #2e3440;
+    --accent: #5b8ff0; --accent-text: #0d1117; --warn-bg: #3d3018; --warn: #f0c060;
+    --nodata: #3a404c; --good: #4cc27c; --bad: #ec6b6b; --kbd: #2a2f3a;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -113,7 +119,7 @@
       <span id="fallback" class="badge hidden" title="This file lacks the selected channel; showing its first channel">fallback</span></span>
       <select id="channel"></select>
     </label>
-    <div class="row" id="dirRow"><span class="hd sub">Direction <kbd>D</kbd></span><div class="seg" id="direction">
+    <div class="row" id="dirRow"><span class="hd sub">Direction <kbd>B</kbd></span><div class="seg" id="direction">
       <button data-dir="forward">Forward</button><button data-dir="backward">Backward</button></div></div>
     <label class="row" id="flattenRow"><span class="hd">Flatten <kbd>F</kbd></span>
       <select id="flatten">
@@ -125,8 +131,9 @@
       <input type="range" id="slice" min="0" max="0" step="1"></label>
     <label class="row" id="copyRow"><span class="hd">Copy to classified/&lt;label&gt;/</span>
       <select id="copyAs">
+        <option value="none">do not copy (log only)</option>
         <option value="original">original file</option>
-        <option value="image">image (jpeg of the current view)</option>
+        <option value="image">image (jpeg of the current view + theme)</option>
       </select></label>
     <div class="labels" id="labelButtons"></div>
     <div id="noteBox" class="hidden"><input type="text" id="note" placeholder="Note for this file, Enter to keep"></div>
@@ -136,6 +143,8 @@
       <button id="undoBtn">Undo <kbd>Z</kbd></button>
     </div>
     <div class="keys" id="keys"></div>
+    <div class="row" style="margin-top:auto"><span class="hd sub">Theme</span><div class="seg" id="theme">
+      <button data-theme="">Auto</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
   </aside>
 </main>
 <div id="toast"></div>
