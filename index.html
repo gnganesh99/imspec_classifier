@@ -118,7 +118,17 @@
   .tool .actions button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   input[type=number] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border);
                        border-radius: 6px; padding: 5px 8px; width: 90px; }
+  #modeBox { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  #modeBox select { width: auto; font-size: 13px; font-weight: 600; }
   #profPlot { width: 100%; }
+  #cfgText { width: 100%; font: 12px/1.4 ui-monospace, monospace; color: var(--text); background: var(--bg);
+             border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; margin: 6px 0; }
+  #scoreValue { font: 600 26px ui-monospace, monospace; min-height: 46px; padding: 6px 12px; border: 2px solid var(--accent);
+                border-radius: 8px; background: var(--bg); word-break: break-all; }
+  #scoreValue::after { content: "▏"; color: var(--accent); animation: blink 1s steps(2, start) infinite; }
+  #scoreValue.empty::before { content: "type a score…"; color: var(--muted); font: 14px system-ui, sans-serif; }
+  @keyframes blink { to { visibility: hidden; } }
+  #scoreBox p { margin: 6px 0 0; }
   .facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 12px; margin: 8px 0; }
   .facts span:nth-child(odd) { color: var(--muted); }
   .facts span { word-break: break-word; }
@@ -146,6 +156,12 @@
 <body>
 <header>
   <h1>SPM Labeler</h1>
+  <label id="modeBox" class="hidden" title="Labeling mode">Mode
+    <select id="modeSel">
+      <option value="binary">Binary</option>
+      <option value="multiclass">Multiclass</option>
+      <option value="score">Score</option>
+    </select></label>
   <span id="folder"></span>
   <span id="status">Starting…</span>
   <span class="hbtns hidden" id="hbtns"><button id="viewBtn" class="tog">View</button><button id="toolsBtn" class="tog">Tools</button></span>
@@ -212,6 +228,13 @@
         </div>
       </details>
       <label class="chk"><input type="checkbox" id="tReadout" checked> Pixel readout (follows the cursor)</label>
+      <details id="cfgBox">
+        <summary>Labeling settings <span class="sub" id="cfgMode"></span></summary>
+        <p class="sub" id="cfgHint"></p>
+        <textarea id="cfgText" rows="12" spellcheck="false" disabled></textarea>
+        <div class="sub" id="cfgMsg"></div>
+        <div class="actions"><button id="cfgSave" disabled>Save to folder</button><button id="cfgReset">Reset to defaults</button></div>
+      </details>
       <details id="metaBox">
         <summary>Metadata</summary>
         <div id="metaFacts" class="facts"></div>
@@ -246,6 +269,10 @@
         <option value="original">original file</option>
         <option value="image">image (jpeg of the current view + theme)</option>
       </select></label>
+    <div id="scoreBox" class="hidden">
+      <div id="scoreValue" class="empty"></div>
+      <p class="sub" id="scoreHint"></p>
+    </div>
     <div class="labels" id="labelButtons"></div>
     <div id="noteBox" class="hidden"><input type="text" id="note" placeholder="Note for this file, Enter to keep"></div>
     <div id="noteChip" class="hidden"></div>
@@ -265,7 +292,7 @@
   // Run locally, every load gets a fresh value (no stale cache while developing).
   const BUILD = "__BUILD__";
   const BUILD_V = BUILD.startsWith("__") ? Date.now() : BUILD;
-  for (const f of ["tools.js", "app.js"]) document.write(`<script src="${f}?v=${BUILD_V}"><\/script>`);
+  for (const f of ["tools.js", "modes.js", "app.js"]) document.write(`<script src="${f}?v=${BUILD_V}"><\/script>`);
 </script>
 </body>
 </html>

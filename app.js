@@ -4,10 +4,10 @@
 
 const LOG_DIR = "classified";
 const LOG_FILE = "classification_log.csv";
-const LOG_COLUMNS = ["file", "type", "channel", "label", "score", "tags", "note", "timestamp"];
+// one row per file and mode: binary / multiclass rows fill label (+ class_id), score rows fill score
+const LOG_COLUMNS = ["file", "type", "channel", "mode", "label", "class_id", "score", "tags", "note", "timestamp"];
 const DEFER_LABEL = "Deferred";   // always available on key D; copies go to classified/deferred/
 const COPY_MODES = ["none", "original", "image"];
-const DEFAULT_CONFIG = { classes: ["Good", "Bad"], score: null, notes: true, copy_as: null };
 const SUPPORTED = /\.(sxm|dat|3ds|jpe?g|png|bmp|gif|webp|tiff?)$/i;
 const PREFETCH = 3;
 const VIEW_CACHE_SIZE = 12;
@@ -20,7 +20,8 @@ const DEFAULT_SETTINGS = {
 
 const $ = (id) => document.getElementById(id);
 const state = {
-  dir: null, config: DEFAULT_CONFIG, files: [], done: new Set(), labels: new Map(), pos: -1,
+  dir: null, config: mergeConfig({}), userConfig: {}, mode: "binary", scoreBuf: "",
+  files: [], rows: new Map(), done: new Set(), pos: -1,   // rows: `${mode}|${file}` -> log row; done: files done in this mode
   current: null,    // {name, type, key, summary, view}
   gen: 0, note: "", workerReady: false, settings: loadSettings(),
   copyAs: loadPref("spm-labeler-copy-as", "none"),   // "none" | "original" | "image" (jpeg of the view)
@@ -88,11 +89,7 @@ async function openFolder(handle) {
   state.dir = handle;
   rememberHandle(handle);
   $("folder").textContent = handle.name;
-  state.config = { ...DEFAULT_CONFIG, ...(await readJson("labeler.json")) };
-  // labeler.json: "copy_as" picks the mode; the older "copy_files": false means "none"
-  const cfgCopy = state.config.copy_files === false ? "none" : state.config.copy_as;
-  if (COPY_MODES.includes(cfgCopy)) setCopyAs(cfgCopy);
-  else if (!COPY_MODES.includes(state.copyAs)) setCopyAs("none");
+  const userConfig = await readJson("labeler.json");
   const files = [];
   for await (const [name, h] of handle.entries()) {
     if (h.kind === "file" && SUPPORTED.test(name)) files.push(name);
@@ -106,12 +103,13 @@ async function openFolder(handle) {
   }
   state.files = files.sort((a, b) => state.mtimes.get(a) - state.mtimes.get(b) || naturalCompare(a, b));
   setLabels(await readLog());
+  applyConfig(userConfig);   // mode, classes, copy mode ... from labeler.json
   viewCache.clear();
-  buildLabelButtons();
-  setupFileList();
   $("message").classList.add("hidden");
   $("side").classList.remove("hidden");
   $("hbtns").classList.remove("hidden");
+  $("modeBox").classList.remove("hidden");
+  $("cfgText").disabled = false;
   if (!state.files.length) return showMessage("No supported files in this folder", "");
   goTo(nextUndone(0));
 }
@@ -135,17 +133,27 @@ function fileType(name) {
   return ["sxm", "dat", "3ds"].includes(ext) ? ext : "img";
 }
 
-// state.labels: file -> its row in the log; state.done: the labeled file names
+const rowKey = (mode, file) => `${mode}|${file}`;
+const rowOf = (file, mode = state.mode) => state.rows.get(rowKey(mode, file));
+
 function setLabels(rows) {
-  state.labels = new Map(rows.map((r) => [r.file, r]));
-  state.done = new Set(state.labels.keys());
+  state.rows = new Map(rows.map((r) => [rowKey(r.mode, r.file), r]));
+  refreshDone();
+}
+// the files that are done in the current mode (deferred ones count)
+function refreshDone() {
+  state.done = new Set();
+  for (const r of state.rows.values()) if (r.mode === state.mode) state.done.add(r.file);
 }
 
 function showLabelInfo(name) {
-  const r = state.labels.get(name);
+  const r = name ? rowOf(name) : null;
   const el = $("labelInfo");
   el.classList.toggle("hidden", !r);
-  if (r) el.textContent = `Labeled: ${r.label} · ${r.timestamp}` + (r.note ? ` · ${r.note}` : "") + " — press a label key to overwrite";
+  if (!r) return;
+  const what = r.label ? `Labeled: ${r.label}${r.class_id !== "" ? ` (class_id ${r.class_id})` : ""}` : `Scored: ${r.score}`;
+  el.textContent = `${what} · ${r.timestamp}` + (r.note ? ` · ${r.note}` : "") +
+    (state.mode === "score" ? " — type a score to overwrite" : " — press a label key to overwrite");
 }
 
 function nextUndone(from) {
@@ -165,6 +173,8 @@ async function goTo(pos) {
   const type = fileType(name);
   state.current = { name, type, key: null, summary: null, view: null };
   state.disp = null;
+  state.scoreBuf = "";
+  updateScoreBox();
   clearLine();
   hideTip();
   resetMeta("Loading…");
@@ -405,29 +415,36 @@ function showEnd() {
 
 function updateProgress() {
   const n = state.files.filter((f) => state.done.has(f)).length;
-  $("progress").textContent = state.files.length ? `${n} / ${state.files.length} labeled` : "";
+  $("progress").textContent = state.files.length ? `${n} / ${state.files.length} ${state.mode === "score" ? "scored" : "labeled"}` : "";
   for (const id of ["prevBtn", "nextBtn"]) $(id).classList.toggle("hidden", !state.files.length);
   $("prevBtn").disabled = state.pos <= 0;
   $("nextBtn").disabled = state.pos >= state.files.length - 1;
 }
 
 // --------------------------------------------------------------------------- file list
-// searchable list of all files, oldest first, with their labels; click a row to jump there
+// searchable list of all files, oldest first, with their entries in the current mode; click a row to jump there
 function setupFileList() {
   const filter = $("fileFilter");
-  const options = [["__all", "All files"], ["__unlabeled", "Unlabeled"],
-                   ...[...binaryClasses(), DEFER_LABEL].map((c) => [c, c])];
+  const options = state.mode === "score"
+    ? [["__all", "All files"], ["__unlabeled", "Unscored"], ["__scored", "Scored"], [DEFER_LABEL, DEFER_LABEL]]
+    : [["__all", "All files"], ["__unlabeled", "Unlabeled"],
+       ...[...(state.mode === "binary" ? binaryClasses() : multiclassList(state.config).map((c) => c.name)), DEFER_LABEL].map((c) => [c, c])];
   filter.replaceChildren(...options.map(([v, t]) => new Option(t, v)));
   $("fileSearch").value = "";
+  renderFileList();
 }
 
 function labelClass(label) {
-  const classes = state.config.classes;
   if (label === DEFER_LABEL) return "defer";
+  if (state.mode !== "binary") return "";
+  const classes = binaryClasses();
   if (classes.length >= 2 && label === classes[0]) return "good";
   if (classes.length >= 2 && label === classes[1]) return "bad";
   return "";
 }
+
+// what the list shows for a row of the current mode
+function chipText(r) { return !r ? "" : r.label || r.score; }
 
 function renderFileList() {
   if (!$("fileListBox").open) return;
@@ -435,17 +452,22 @@ function renderFileList() {
   const frag = document.createDocumentFragment();
   let shown = 0, curRow = null;
   state.files.forEach((name, i) => {
-    const r = state.labels.get(name), lab = r ? r.label : "";
-    if (f === "__unlabeled" ? lab : f !== "__all" && lab !== f) return;
-    if (q && !name.toLowerCase().includes(q) && !lab.toLowerCase().includes(q)) return;
+    const r = rowOf(name), text = chipText(r);
+    const scored = r && r.label !== DEFER_LABEL && r.score !== "";
+    if (f === "__unlabeled" ? r : f === "__scored" ? !scored : f !== "__all" && !(r && r.label === f)) return;
+    if (q && !name.toLowerCase().includes(q) && !text.toLowerCase().includes(q)) return;
     const row = document.createElement("div");
     row.className = "frow" + (i === state.pos ? " cur" : "");
     row.dataset.i = i;
-    row.title = localTimestamp(new Date(state.mtimes.get(name)));
+    const others = MODES.filter((m) => m !== state.mode).map((m) => {
+      const o = rowOf(name, m);
+      return o ? `${MODE_LABELS[m]}: ${chipText(o)}` : null;
+    }).filter(Boolean);
+    row.title = [localTimestamp(new Date(state.mtimes.get(name))), ...others].join("\n");
     const n = document.createElement("span"), nm = document.createElement("span"), chip = document.createElement("span");
     n.className = "n"; n.textContent = i + 1;
     nm.className = "nm"; nm.textContent = name;
-    chip.className = "chip " + labelClass(lab); chip.textContent = lab || "–";
+    chip.className = "chip " + labelClass(r ? r.label : ""); chip.textContent = text || "–";
     row.append(n, nm, chip);
     frag.append(row);
     if (i === state.pos) curRow = row;
@@ -457,39 +479,10 @@ function renderFileList() {
 }
 
 // --------------------------------------------------------------------------- labeling
-// Binary mode (the only mode for now): two classes, keys 1 (first, Good) and 0 (second, Bad), plus Defer on D.
-// Any further entries in labeler.json "classes" are ignored.
-function binaryClasses() { return state.config.classes.slice(0, 2); }
-const BINARY_KEYS = [["→", "1"], ["←", "0"]];   // [arrow, number] per class
+// binary / multiclass / score entries all go through record(); the buttons and keys live in modes.js
+function label(cls) { record({ label: cls }); }
 
-function buildLabelButtons() {
-  const wrap = $("labelButtons");
-  wrap.replaceChildren();
-  const classes = binaryClasses();
-  classes.forEach((cls, i) => {
-    const b = document.createElement("button");
-    const keys = BINARY_KEYS[i];
-    b.innerHTML = `<span></span><span>${keys.map((k) => `<kbd>${k}</kbd>`).join("")}</span>`;
-    b.firstChild.textContent = cls;
-    if (classes.length >= 2 && i < 2) b.className = i === 0 ? "good" : "bad";
-    b.onclick = () => label(cls);
-    wrap.append(b);
-  });
-  const defer = document.createElement("button");
-  defer.innerHTML = `<span>Defer</span><span><kbd>D</kbd></span>`;
-  defer.onclick = () => label(DEFER_LABEL);
-  wrap.append(defer);
-  const keys = [["↑ ↓", "channel"], ["B", "forward / backward"], ["D", "defer (classified/deferred/)"], ["F", "flatten"], ["C", "colormap"],
-                [", .", "slice (3ds, stacks)"], ["Space", "skip"], ["[ ]", "previous / next file"], ["Home End", "first / last file"], ["⇧ Space", "first unlabeled"], ["Z", "undo last label"]];
-  if (state.config.notes) keys.push(["N", "note for this file"]);
-  $("keys").replaceChildren(...keys.flatMap(([k, d]) => {
-    const a = document.createElement("span"); a.innerHTML = k.split(" ").map((x) => `<kbd>${x}</kbd>`).join(" ");
-    const b = document.createElement("span"); b.textContent = d;
-    return [a, b];
-  }));
-}
-
-function label(cls) {
+function record(fields) {
   const cur = state.current;
   if (!cur) return;
   const view = cur.view;
@@ -498,32 +491,37 @@ function label(cls) {
     const dirs = cur.summary.directions[view.channel] || [];
     channel = view.kind === "spectrum" || dirs.length < 2 ? view.channel : `${view.channel} ${view.direction}`;
   }
+  const mode = state.mode;
   const row = {
-    file: cur.name, type: cur.type, channel, label: cls, score: "", tags: "", note: state.note, timestamp: localTimestamp(),
+    file: cur.name, type: cur.type, channel, mode, label: "", class_id: "", score: "", tags: "",
+    note: state.note, timestamp: localTimestamp(), ...fields,
   };
   state.note = "";
   $("noteChip").classList.add("hidden");
-  const previous = state.labels.get(cur.name);   // set when reviewing an already labeled file
-  state.labels.set(cur.name, row);
+  const previous = rowOf(cur.name);   // set when reviewing an already labeled file
+  state.rows.set(rowKey(mode, cur.name), row);
   state.done.add(cur.name);
-  const mode = state.copyAs;
+  const copy = mode === "score" ? "none" : state.copyAs;   // scores are never copied
   // snapshot now: the canvas is redrawn for the next file before the IO runs
-  const snapshot = mode === "image" ? snapshotView() : null;
+  const snapshot = copy === "image" && row.label ? snapshotView() : null;
   queueIO(async () => {
-    if (previous) {   // overwrite: drop the old row and its copies, so Undo reverts the latest action
-      const rows = (await readLog()).filter((r) => r.file !== cur.name);
+    if (previous) {   // overwrite: drop the old row (of this mode) and its copies, so Undo reverts the latest action
+      const rows = (await readLog()).filter((r) => !(r.file === cur.name && r.mode === mode));
       await writeLog([...rows, row]);
       await removeCopies(previous);
     } else await appendLog(row);
-    if (snapshot) await writeJpeg(snapshot, jpegName(cur.name), cls);
-    else if (mode === "original") await copyInto(cur.name, cls);
-  }, `Could not save label for ${cur.name}`);
-  toast(`${cur.name} → ${cls}${previous ? " (was " + previous.label + ")" : ""}`);
+    if (!row.label) return;
+    if (snapshot) await writeJpeg(snapshot, jpegName(cur.name), row.label);
+    else if (copy === "original") await copyInto(cur.name, row.label);
+  }, `Could not save the entry for ${cur.name}`);
+  const shown = row.label || row.score, was = previous ? chipText(previous) : "";
+  toast(`${cur.name} → ${shown}${previous ? " (was " + was + ")" : ""}`);
   goTo(previous ? Math.min(state.pos + 1, state.files.length) : nextUndone(state.pos + 1));
 }
 
 // remove the copy (original or jpeg) made for a logged row, if any
 async function removeCopies(row) {
+  if (!row.label) return;   // score rows have no copies
   try {
     const logDir = await state.dir.getDirectoryHandle(LOG_DIR);
     const dst = await logDir.getDirectoryHandle(folderName(row.label));
@@ -538,12 +536,13 @@ function skip() {
 function undo() {
   queueIO(async () => {
     const rows = await readLog();
-    const last = rows.pop();
-    if (!last) return toast("Nothing to undo");
+    const at = rows.map((r) => r.mode).lastIndexOf(state.mode);   // the last entry made in this mode
+    if (at < 0) return toast("Nothing to undo in this mode");
+    const [last] = rows.splice(at, 1);
     await writeLog(rows);
     await removeCopies(last);
     setLabels(rows);
-    toast(`Undid ${last.file} → ${last.label}`);
+    toast(`Undid ${last.file} → ${chipText(last)}`);
     const i = state.files.indexOf(last.file);
     goTo(i >= 0 ? i : nextUndone(0));
   }, "Undo failed");
@@ -573,7 +572,12 @@ async function readLog() {
     const [header, ...rows] = parseCsv(text);
     if (!header) return [];
     return rows.filter((r) => r.length > 1 || r[0])
-      .map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])));
+      .map((r) => {
+        const row = Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""]));
+        for (const c of LOG_COLUMNS) row[c] ??= "";
+        row.mode ||= "binary";   // logs from before the mode column existed
+        return row;
+      });
   } catch (e) {
     if (e.name === "NotFoundError") return [];
     throw e;
@@ -583,6 +587,10 @@ async function readLog() {
 async function appendLog(row) {
   const fh = await logHandle(true);
   const file = await fh.getFile();
+  if (file.size && (await file.slice(0, 500).text()).split(/\r?\n/)[0] !== LOG_COLUMNS.join(",")) {
+    await writeLog([...(await readLog()), row]);   // an older log: rewrite it with the current columns
+    return;
+  }
   const w = await fh.createWritable({ keepExistingData: true });
   await w.seek(file.size);
   let text = file.size ? "" : csvLine(LOG_COLUMNS);
@@ -699,14 +707,10 @@ function onKey(e) {
   }
   if (tag === "INPUT" && e.target.type !== "range" && e.target.type !== "checkbox") return;
   if (!state.dir || e.ctrlKey && e.key !== "z" || e.metaKey || e.altKey) return;
-  const classes = binaryClasses();
   const view = state.current && state.current.view;
   const s = state.current && state.settings[state.current.type];
   let handled = true;
-  if (e.key === "ArrowRight" && classes.length >= 2) label(classes[0]);
-  else if (e.key === "ArrowLeft" && classes.length >= 2) label(classes[1]);
-  else if (e.key === "1" && classes[0]) label(classes[0]);
-  else if (e.key === "0" && classes[1]) label(classes[1]);
+  if (modeKey(e)) { /* binary / multiclass class keys, typing a score */ }
   else if (e.key === "ArrowUp") cycleChannel(-1);
   else if (e.key === "ArrowDown") cycleChannel(1);
   else if (e.key === "Escape") { if (state.line) clearLine(); }
@@ -721,8 +725,8 @@ function onKey(e) {
   else if (e.key.toLowerCase() === "b" && view) changeSetting({ direction: view.direction === "forward" ? "backward" : "forward" });
   else if (e.key.toLowerCase() === "f") changeSetting({ flatten: cycle(FLATTENS, s.flatten, e.shiftKey ? -1 : 1) });
   else if (e.key.toLowerCase() === "c") changeSetting({ cmap: cycle(Object.keys(COLORMAPS), s.cmap, e.shiftKey ? -1 : 1) });
-  else if ((e.key === "," || e.key === ".") && view && view.kind === "cube")
-    changeSetting({ index: Math.min(view.n - 1, Math.max(0, (s.index ?? view.index) + (e.key === "." ? 1 : -1))) });
+  else if ((e.key === "PageUp" || e.key === "PageDown") && view && view.kind === "cube")
+    changeSetting({ index: Math.min(view.n - 1, Math.max(0, (s.index ?? view.index) + (e.key === "PageDown" ? 1 : -1))) });
   else if (e.key.toLowerCase() === "n" && state.config.notes) openNote();
   else handled = false;
   if (handled) {
@@ -796,6 +800,7 @@ async function lastHandle() {
   }
   document.addEventListener("keydown", onKey);
   initTools();
+  initModes();
   $("channel").onchange = (e) => { changeSetting({ channel: e.target.value }); e.target.blur(); };
   $("flatten").onchange = (e) => { changeSetting({ flatten: e.target.value }); e.target.blur(); };
   $("cmap").onchange = (e) => { changeSetting({ cmap: e.target.value }); e.target.blur(); };
