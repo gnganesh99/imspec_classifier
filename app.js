@@ -30,7 +30,7 @@ let ioChain = Promise.resolve();
 let plot = null;
 
 // --------------------------------------------------------------------------- worker RPC
-const worker = new Worker("worker.js");
+const worker = new Worker("worker.js?v=" + BUILD_V);   // BUILD_V: see index.html
 const pending = new Map();
 let nextId = 1;
 worker.onmessage = (ev) => {
@@ -194,6 +194,13 @@ async function fetchView(name, settings, prio) {
   const res = await call("show", { key, name, bytes, settings }, prio, [bytes]);
   cacheView(ck, res);
   return { key, ...res };
+}
+
+// parse the file in Python again (its cache holds fewer files than viewCache does)
+async function reloadInPython(cur) {
+  const file = await (await state.dir.getFileHandle(cur.name)).getFile();
+  const bytes = await file.arrayBuffer();
+  await call("show", { key: cur.key, name: cur.name, bytes, settings: state.settings[cur.type] }, 0, [bytes]);
 }
 
 function cacheView(ck, res) {

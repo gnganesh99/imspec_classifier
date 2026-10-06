@@ -88,6 +88,7 @@
   .nav:hover:not(:disabled) polygon { stroke: var(--accent); fill: var(--kbd); }
   #prevBtn { left: 6px; }
   #nextBtn { right: 6px; }
+  details > .tool, details > .facts { margin-top: 8px; }
   details summary { cursor: pointer; font-weight: 600; user-select: none; }
   .filebar { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
   #fileList { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
@@ -177,6 +178,12 @@
       <h3>View</h3>
       <p class="sub">Only the image is transformed; the axis ticks keep their meaning (x to the right, y upwards).
         Remembered per file type.</p>
+      <label class="row" id="flattenRow"><span class="hd">Flatten <kbd>F</kbd></span>
+      <select id="flatten">
+        <option value="none">none</option><option value="offset">line offset</option>
+        <option value="line">line fit</option><option value="plane">plane</option>
+      </select></label>
+      <label class="row" id="cmapRow"><span class="hd">Colormap <kbd>C</kbd></span><select id="cmap"></select></label>
       <label class="chk"><input type="checkbox" id="vTranspose"> Transpose</label>
       <label class="row"><span class="hd">Origin</span>
         <select id="vOrigin">
@@ -187,19 +194,23 @@
       <div class="row"><span class="hd">Scale</span><div class="seg" id="vScale">
         <button data-scale="ticks">Ticks</button><button data-scale="bar">Scale bar</button>
         <button data-scale="none">None</button></div></div>
+      <div class="row"><span class="hd sub">Theme</span><div class="seg" id="theme">
+      <button data-theme="">Auto</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
     </section>
     <section id="toolsPanel" class="hidden">
       <h3>Tools</h3>
-      <div class="tool">
-        <div class="hd"><b>Line profile</b></div>
-        <p class="sub" id="profNote">Turn on <em>Draw line</em>, then drag on the image.</p>
-        <div class="actions"><button id="profMode">Draw line</button><button id="profClear">Clear <kbd>Esc</kbd></button></div>
-        <label class="row"><span class="hd">Averaging width (px), 1 = single line</span>
-          <input type="number" id="profWidth" min="1" max="99" step="1" value="5"></label>
-        <div id="profPlot"></div>
-        <div class="sub" id="profStats"></div>
-        <button id="profCsv" disabled>Export profile as CSV</button>
-      </div>
+      <details id="profBox">
+        <summary>Line profile</summary>
+        <div class="tool">
+          <p class="sub" id="profNote">Turn on <em>Draw line</em>, then drag on the image.</p>
+          <div class="actions"><button id="profMode">Draw line</button><button id="profClear">Clear <kbd>Esc</kbd></button></div>
+          <label class="row"><span class="hd">Averaging width (px), 1 = single line</span>
+            <input type="number" id="profWidth" min="1" max="99" step="1" value="5"></label>
+          <div id="profPlot"></div>
+          <div class="sub" id="profStats"></div>
+          <button id="profCsv" disabled>Export profile as CSV</button>
+        </div>
+      </details>
       <label class="chk"><input type="checkbox" id="tReadout" checked> Pixel readout (follows the cursor)</label>
       <details id="metaBox">
         <summary>Metadata</summary>
@@ -227,12 +238,6 @@
     </label>
     <div class="row" id="dirRow"><span class="hd sub">Direction <kbd>B</kbd></span><div class="seg" id="direction">
       <button data-dir="forward">Forward</button><button data-dir="backward">Backward</button></div></div>
-    <label class="row" id="flattenRow"><span class="hd">Flatten <kbd>F</kbd></span>
-      <select id="flatten">
-        <option value="none">none</option><option value="offset">line offset</option>
-        <option value="line">line fit</option><option value="plane">plane</option>
-      </select></label>
-    <label class="row" id="cmapRow"><span class="hd">Colormap <kbd>C</kbd></span><select id="cmap"></select></label>
     <label class="row" id="sliceRow"><span class="hd">Slice <kbd>,</kbd><kbd>.</kbd> <span id="sliceText"></span></span>
       <input type="range" id="slice" min="0" max="0" step="1"></label>
     <label class="row" id="copyRow"><span class="hd">Copy to classified/&lt;label&gt;/</span>
@@ -249,15 +254,18 @@
       <button id="undoBtn">Undo <kbd>Z</kbd></button>
     </div>
     <div class="keys" id="keys"></div>
-    <div class="row" style="margin-top:auto"><span class="hd sub">Theme</span><div class="seg" id="theme">
-      <button data-theme="">Auto</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div></div>
   </aside>
 </main>
 <div id="tip" class="hidden"></div>
 <div id="toast"></div>
 <script src="vendor/uPlot.iife.min.js"></script>
 <script src="vendor/colormaps.js"></script>
-<script src="tools.js"></script>
-<script src="app.js"></script>
+<script>
+  // The deploy step replaces the placeholder below with the commit id, so browsers never mix old and new files.
+  // Run locally, every load gets a fresh value (no stale cache while developing).
+  const BUILD = "__BUILD__";
+  const BUILD_V = BUILD.startsWith("__") ? Date.now() : BUILD;
+  for (const f of ["tools.js", "app.js"]) document.write(`<script src="${f}?v=${BUILD_V}"><\/script>`);
+</script>
 </body>
 </html>

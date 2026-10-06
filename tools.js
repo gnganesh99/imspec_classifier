@@ -6,7 +6,7 @@ function loadJson(key) { try { return JSON.parse(localStorage.getItem(key) || "{
 function saveJson(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 
 const tools = { readout: true, width: 5, ...loadJson("spm-labeler-tools"), profile: false };
-const panels = { view: false, tools: false, meta: true, ...loadJson("spm-labeler-panels") };
+const panels = { view: false, tools: false, meta: true, profile: false, ...loadJson("spm-labeler-panels") };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // --------------------------------------------------------------------------- display model
@@ -295,12 +295,19 @@ async function refreshMeta() {
   if (!cur || !cur.key || !cur.view) { state.meta = null; state.metaTag = ""; return renderMeta(); }
   const tag = [cur.key, cur.view.channel, cur.view.direction].join("|");
   if (tag === state.metaTag) return;
+  const ask = () => call("meta", { key: cur.key, channel: cur.view.channel, direction: cur.view.direction }, 0);
   try {
-    const res = await call("meta", { key: cur.key, channel: cur.view.channel, direction: cur.view.direction }, 0);
-    if (res.notLoaded || state.current !== cur) return;
+    let res = await ask();
+    if (res.notLoaded) {   // Python dropped this file from its cache: parse it again, then retry
+      await reloadInPython(cur);
+      res = await ask();
+    }
+    if (state.current !== cur) return;
+    if (!Array.isArray(res.facts)) throw new Error("unexpected reply from the worker; hard-refresh the page (Ctrl+Shift+R)");
     state.meta = res;
     state.metaTag = tag;
   } catch (e) {
+    if (state.current !== cur) return;
     state.meta = { facts: [["Error", e.message]], all: [] };
   }
   renderMeta();
@@ -390,6 +397,18 @@ function initTools() {
     saveJson("spm-labeler-tools", { readout: tools.readout, width: tools.width });
     if (!tools.readout) hideTip();
     e.target.blur();
+  };
+  // Line profile is a drop down; collapsing it also leaves drawing mode, so no hidden crosshair mode stays on
+  $("profBox").open = !!panels.profile;
+  $("profBox").ontoggle = () => {
+    panels.profile = $("profBox").open;
+    saveJson("spm-labeler-panels", panels);
+    if (!panels.profile && tools.profile) {
+      tools.profile = false;
+      $("profMode").classList.remove("on");
+      $("imgBox").classList.remove("drawmode");
+    }
+    if (panels.profile) updateProfile();   // the plot needs the width of the opened section
   };
   $("metaBox").open = panels.meta !== false;
   $("metaBox").ontoggle = () => { panels.meta = $("metaBox").open; saveJson("spm-labeler-panels", panels); refreshMeta(); };
