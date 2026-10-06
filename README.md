@@ -16,6 +16,9 @@ and `jpg / png / tif / bmp / gif / webp` images.
 | `D` | defer: logged as `Deferred`, copied to `classified/deferred/` |
 | `1`–`9` | class 1–9 |
 | `Space` | skip (stays unlabeled) |
+| `[` / `]` | previous / next file, labeled or not (also the ‹ › buttons beside the image); a labeled file shows its label, and pressing a label key **overwrites** it |
+| `Home` / `End` | first / last file |
+| `Shift`+`Space` | jump to the first unlabeled file |
 | `Z` | undo the last label (removes the CSV row and the copied file) |
 | `↑` `↓` | channel (remembered per file type) |
 | `B` | backward / forward scan |

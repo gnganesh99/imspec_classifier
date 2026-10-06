@@ -11,6 +11,7 @@ const DEFAULT_CONFIG = { classes: ["Good", "Bad"], score: null, notes: true, cop
 const SUPPORTED = /\.(sxm|dat|3ds|jpe?g|png|bmp|gif|webp|tiff?)$/i;
 const PREFETCH = 3;
 const VIEW_CACHE_SIZE = 12;
+const GUTTER = 128;   // stage padding (left + right) that keeps the ‹ › buttons clear of the content
 const FLATTENS = ["none", "offset", "line", "plane"];
 const DEFAULT_SETTINGS = {
   sxm: { flatten: "offset", cmap: "afmhot" }, "3ds": { flatten: "none", cmap: "viridis" },
@@ -19,7 +20,7 @@ const DEFAULT_SETTINGS = {
 
 const $ = (id) => document.getElementById(id);
 const state = {
-  dir: null, config: DEFAULT_CONFIG, files: [], done: new Set(), pos: -1,
+  dir: null, config: DEFAULT_CONFIG, files: [], done: new Set(), labels: new Map(), pos: -1,
   current: null,    // {name, type, key, summary, view}
   gen: 0, note: "", workerReady: false, settings: loadSettings(),
   copyAs: loadPref("spm-labeler-copy-as", "none"),   // "none" | "original" | "image" (jpeg of the view)
@@ -96,7 +97,7 @@ async function openFolder(handle) {
     if (h.kind === "file" && SUPPORTED.test(name)) files.push(name);
   }
   state.files = files.sort(naturalCompare);
-  state.done = new Set((await readLog()).map((r) => r.file));
+  setLabels(await readLog());
   viewCache.clear();
   buildLabelButtons();
   $("message").classList.add("hidden");
@@ -124,6 +125,19 @@ function fileType(name) {
   return ["sxm", "dat", "3ds"].includes(ext) ? ext : "img";
 }
 
+// state.labels: file -> its row in the log; state.done: the labeled file names
+function setLabels(rows) {
+  state.labels = new Map(rows.map((r) => [r.file, r]));
+  state.done = new Set(state.labels.keys());
+}
+
+function showLabelInfo(name) {
+  const r = state.labels.get(name);
+  const el = $("labelInfo");
+  el.classList.toggle("hidden", !r);
+  if (r) el.textContent = `Labeled: ${r.label} · ${r.timestamp}` + (r.note ? ` · ${r.note}` : "") + " — press a label key to overwrite";
+}
+
 function nextUndone(from) {
   for (let i = from; i < state.files.length; i++) if (!state.done.has(state.files[i])) return i;
   return state.files.length;
@@ -141,6 +155,7 @@ async function goTo(pos) {
   state.current = { name, type, key: null, summary: null, view: null };
   $("fileName").textContent = name;
   $("fileInfo").textContent = `${pos + 1} of ${state.files.length} · ${type === "img" ? "image" : "." + type}`;
+  showLabelInfo(name);
   try {
     const res = await fetchView(name, state.settings[type], 0);
     if (state.current.name !== name) return;
@@ -275,7 +290,7 @@ function drawImage(view, cmap) {
   // fit the stage, keeping the physical aspect ratio
   const stage = $("stage");
   const plotH = view.spectrum ? 220 : 0;
-  const maxW = stage.clientWidth - 32 - (view.kind === "rgb" ? 0 : 90);
+  const maxW = stage.clientWidth - GUTTER - (view.kind === "rgb" ? 0 : 90);
   const maxH = stage.clientHeight - 64 - plotH;
   const aspect = view.extent[0] / view.extent[1] || view.w / view.h;
   let w = Math.max(50, maxW), h = w / aspect;
@@ -310,7 +325,7 @@ function drawPlot(spec, marker, below) {
   const text = css.getPropertyValue("--muted").trim(), grid = css.getPropertyValue("--border").trim();
   const axis = (label) => ({ label, stroke: text, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid } });
   const data = [spec.x, ...spec.series.map((s) => s.y.map((v) => (v === undefined ? null : v)))];
-  const width = Math.min($("stage").clientWidth - 32, 1100);
+  const width = Math.min($("stage").clientWidth - GUTTER, 1100);
   const height = below ? 200 : Math.max(240, Math.min($("stage").clientHeight - 60, 640));
   plot = new uPlot({
     width, height,
@@ -356,6 +371,7 @@ function showEnd() {
   const left = state.files.filter((f) => !state.done.has(f)).length;
   $("fileName").textContent = "";
   $("fileInfo").textContent = "";
+  showLabelInfo(null);
   showMessage(left ? "End of folder" : "All files labeled",
               left ? `${left} skipped file(s) still unlabeled.` : `Log: ${LOG_DIR}/${LOG_FILE}`);
   if (left) {
@@ -370,6 +386,9 @@ function showEnd() {
 function updateProgress() {
   const n = state.files.filter((f) => state.done.has(f)).length;
   $("progress").textContent = state.files.length ? `${n} / ${state.files.length} labeled` : "";
+  for (const id of ["prevBtn", "nextBtn"]) $(id).classList.toggle("hidden", !state.files.length);
+  $("prevBtn").disabled = state.pos <= 0;
+  $("nextBtn").disabled = state.pos >= state.files.length - 1;
 }
 
 // --------------------------------------------------------------------------- labeling
@@ -393,7 +412,7 @@ function buildLabelButtons() {
   defer.onclick = () => label(DEFER_LABEL);
   wrap.append(defer);
   const keys = [["↑ ↓", "channel"], ["B", "forward / backward"], ["D", "defer (classified/deferred/)"], ["F", "flatten"], ["C", "colormap"],
-                [", .", "slice (3ds, stacks)"], ["Space", "skip"], ["Z", "undo last label"]];
+                [", .", "slice (3ds, stacks)"], ["Space", "skip"], ["[ ]", "previous / next file"], ["Home End", "first / last file"], ["⇧ Space", "first unlabeled"], ["Z", "undo last label"]];
   if (state.config.notes) keys.push(["N", "note for this file"]);
   $("keys").replaceChildren(...keys.flatMap(([k, d]) => {
     const a = document.createElement("span"); a.innerHTML = k.split(" ").map((x) => `<kbd>${x}</kbd>`).join(" ");
@@ -416,17 +435,32 @@ function label(cls) {
   };
   state.note = "";
   $("noteChip").classList.add("hidden");
+  const previous = state.labels.get(cur.name);   // set when reviewing an already labeled file
+  state.labels.set(cur.name, row);
   state.done.add(cur.name);
   const mode = state.copyAs;
   // snapshot now: the canvas is redrawn for the next file before the IO runs
   const snapshot = mode === "image" ? snapshotView() : null;
   queueIO(async () => {
-    await appendLog(row);
+    if (previous) {   // overwrite: drop the old row and its copies, so Undo reverts the latest action
+      const rows = (await readLog()).filter((r) => r.file !== cur.name);
+      await writeLog([...rows, row]);
+      await removeCopies(previous);
+    } else await appendLog(row);
     if (snapshot) await writeJpeg(snapshot, jpegName(cur.name), cls);
     else if (mode === "original") await copyInto(cur.name, cls);
   }, `Could not save label for ${cur.name}`);
-  toast(`${cur.name} → ${cls}`);
-  goTo(nextUndone(state.pos + 1));
+  toast(`${cur.name} → ${cls}${previous ? " (was " + previous.label + ")" : ""}`);
+  goTo(previous ? Math.min(state.pos + 1, state.files.length) : nextUndone(state.pos + 1));
+}
+
+// remove the copy (original or jpeg) made for a logged row, if any
+async function removeCopies(row) {
+  try {
+    const logDir = await state.dir.getDirectoryHandle(LOG_DIR);
+    const dst = await logDir.getDirectoryHandle(folderName(row.label));
+    for (const n of [row.file, jpegName(row.file)]) await dst.removeEntry(n).catch(() => {});
+  } catch {}
 }
 
 function skip() {
@@ -439,12 +473,8 @@ function undo() {
     const last = rows.pop();
     if (!last) return toast("Nothing to undo");
     await writeLog(rows);
-    try {   // remove the copy (original or jpeg), if one was made
-      const logDir = await state.dir.getDirectoryHandle(LOG_DIR);
-      const dst = await logDir.getDirectoryHandle(folderName(last.label));
-      for (const n of [last.file, jpegName(last.file)]) await dst.removeEntry(n).catch(() => {});
-    } catch {}
-    state.done = new Set(rows.map((r) => r.file));
+    await removeCopies(last);
+    setLabels(rows);
     toast(`Undid ${last.file} → ${last.label}`);
     const i = state.files.indexOf(last.file);
     goTo(i >= 0 ? i : nextUndone(0));
@@ -608,7 +638,11 @@ function onKey(e) {
   else if (/^[1-9]$/.test(e.key) && classes[+e.key - 1]) label(classes[+e.key - 1]);
   else if (e.key === "ArrowUp") cycleChannel(-1);
   else if (e.key === "ArrowDown") cycleChannel(1);
-  else if (e.key === " ") skip();
+  else if (e.key === " ") e.shiftKey ? goTo(nextUndone(0)) : skip();
+  else if (e.key === "[") goTo(Math.max(0, state.pos - 1));
+  else if (e.key === "]") { if (state.pos < state.files.length - 1) goTo(state.pos + 1); }
+  else if (e.key === "Home") goTo(0);
+  else if (e.key === "End") goTo(state.files.length - 1);
   else if (e.key.toLowerCase() === "z") undo();
   else if (e.key.toLowerCase() === "d") label(DEFER_LABEL);
   else if (!s) handled = false;
@@ -710,6 +744,8 @@ async function lastHandle() {
   $("slice").oninput = (e) => changeSetting({ index: +e.target.value });
   $("slice").onchange = (e) => e.target.blur();
   for (const b of $("direction").children) b.onclick = () => { changeSetting({ direction: b.dataset.dir }); b.blur(); };
+  $("prevBtn").onclick = (e) => { goTo(Math.max(0, state.pos - 1)); e.target.blur(); };
+  $("nextBtn").onclick = (e) => { goTo(state.pos + 1); e.target.blur(); };
   $("skipBtn").onclick = (e) => { skip(); e.target.blur(); };
   $("undoBtn").onclick = (e) => { undo(); e.target.blur(); };
   window.addEventListener("resize", () => state.current && state.current.view && draw());

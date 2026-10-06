@@ -36,7 +36,7 @@
   #status { color: var(--muted); font-size: 13px; }
   main { flex: 1; display: flex; min-height: 0; }
   #stage { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-           padding: 16px; gap: 8px; position: relative; }
+           padding: 16px 64px; gap: 8px; position: relative; }
   #canvasWrap { display: flex; align-items: flex-end; gap: 10px; }
   #img { image-rendering: pixelated; background: var(--nodata); box-shadow: 0 0 0 1px var(--border); }
   #cbar { display: flex; flex-direction: column; align-items: flex-start; font-size: 12px; color: var(--muted);
@@ -74,7 +74,18 @@
   .keys { font-size: 12px; color: var(--muted); display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; }
   .actions { display: flex; gap: 6px; }
   .actions button { flex: 1; }
+  #labelInfo { margin-top: 4px; font-size: 12px; color: var(--good); word-break: break-word; }
   #noteChip { font-size: 12px; background: var(--kbd); border-radius: 6px; padding: 4px 8px; word-break: break-word; }
+  .nav { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; padding: 0; z-index: 2;
+         background: none; border: 0; opacity: .32; }
+  .nav svg { width: 100%; height: 100%; display: block; }
+  .nav:disabled { opacity: .15; }   /* first / last file: dimmer than the resting state */
+  .nav:hover:not(:disabled) { opacity: 1; }   /* hover looks as before */
+  .nav polygon { fill: var(--panel); stroke: var(--muted); stroke-width: 2.5; stroke-linejoin: round; }
+  .nav text { fill: var(--text); font: 600 18px ui-monospace, monospace; text-anchor: middle; dominant-baseline: central; }
+  .nav:hover:not(:disabled) polygon { stroke: var(--accent); fill: var(--kbd); }
+  #prevBtn { left: 6px; }
+  #nextBtn { right: 6px; }
   #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);
            padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.show { opacity: .95; }
@@ -94,6 +105,10 @@
 </header>
 <main>
   <section id="stage">
+    <button id="prevBtn" class="nav hidden" title="Previous file  [" aria-label="Previous file">
+      <svg viewBox="0 0 48 64"><polygon points="44,4 44,60 4,32"/><text x="30.7" y="31">[</text></svg></button>
+    <button id="nextBtn" class="nav hidden" title="Next file  ]" aria-label="Next file">
+      <svg viewBox="0 0 48 64"><polygon points="4,4 4,60 44,32"/><text x="17.3" y="31">]</text></svg></button>
     <div id="message">
       <h2>Label SPM data and images in a local folder</h2>
       <p>Nanonis <code>.sxm</code>, <code>.dat</code>, <code>.3ds</code> and jpg / png / tif / bmp images.
@@ -114,6 +129,7 @@
     <div>
       <div class="file" id="fileName"></div>
       <div class="sub" id="fileInfo"></div>
+      <div id="labelInfo" class="hidden"></div>
     </div>
     <label class="row"><span class="hd">Channel <kbd>↑</kbd><kbd>↓</kbd>
       <span id="fallback" class="badge hidden" title="This file lacks the selected channel; showing its first channel">fallback</span></span>
