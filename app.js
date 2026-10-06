@@ -5,7 +5,7 @@
 const LOG_DIR = "classified";
 const LOG_FILE = "classification_log.csv";
 const LOG_COLUMNS = ["file", "type", "channel", "label", "score", "tags", "note", "timestamp"];
-const DEFAULT_CONFIG = { classes: ["Good", "Bad"], score: null, notes: true, copy_files: true };
+const DEFAULT_CONFIG = { classes: ["Good", "Bad"], score: null, notes: true, copy_files: true, copy_as: null };
 const SUPPORTED = /\.(sxm|dat|3ds|jpe?g|png|bmp|gif|webp|tiff?)$/i;
 const PREFETCH = 3;
 const VIEW_CACHE_SIZE = 12;
@@ -20,6 +20,7 @@ const state = {
   dir: null, config: DEFAULT_CONFIG, files: [], done: new Set(), pos: -1,
   current: null,    // {name, type, key, summary, view}
   gen: 0, note: "", workerReady: false, settings: loadSettings(),
+  copyAs: loadPref("spm-labeler-copy-as", "original"),   // "original" | "image" (jpeg of the view)
 };
 const viewCache = new Map();   // `${key}|${settingsKey}` -> {summary, view}
 let ioChain = Promise.resolve();
@@ -84,6 +85,8 @@ async function openFolder(handle) {
   rememberHandle(handle);
   $("folder").textContent = handle.name;
   state.config = { ...DEFAULT_CONFIG, ...(await readJson("labeler.json")) };
+  if (["original", "image"].includes(state.config.copy_as)) setCopyAs(state.config.copy_as);
+  $("copyRow").classList.toggle("hidden", !state.config.copy_files);
   const files = [];
   for await (const [name, h] of handle.entries()) {
     if (h.kind === "file" && SUPPORTED.test(name)) files.push(name);
@@ -407,9 +410,12 @@ function label(cls) {
   $("noteChip").classList.add("hidden");
   state.done.add(cur.name);
   const copy = state.config.copy_files;
+  // snapshot now: the canvas is redrawn for the next file before the IO runs
+  const snapshot = copy && state.copyAs === "image" ? snapshotView() : null;
   queueIO(async () => {
     await appendLog(row);
-    if (copy) await copyInto(cur.name, cls);
+    if (snapshot) await writeJpeg(snapshot, jpegName(cur.name), cls);
+    else if (copy) await copyInto(cur.name, cls);
   }, `Could not save label for ${cur.name}`);
   toast(`${cur.name} → ${cls}`);
   goTo(nextUndone(state.pos + 1));
@@ -428,7 +434,9 @@ function undo() {
     if (state.config.copy_files) {
       try {
         const logDir = await state.dir.getDirectoryHandle(LOG_DIR);
-        await (await logDir.getDirectoryHandle(safeName(last.label))).removeEntry(last.file);
+        const dst = await logDir.getDirectoryHandle(safeName(last.label));
+        // the copy is either the original file or its jpeg image
+        for (const n of [last.file, jpegName(last.file)]) await dst.removeEntry(n).catch(() => {});
       } catch {}
     }
     state.done = new Set(rows.map((r) => r.file));
@@ -493,6 +501,43 @@ async function copyInto(name, cls) {
   const w = await (await dst.getFileHandle(name, { create: true })).createWritable();
   await w.write(src);
   await w.close();
+}
+
+function jpegName(name) { return name.replace(/\.[^.]+$/, "") + ".jpg"; }
+
+// copy of what is on screen: the image canvas, or the spectrum plot
+function snapshotView() {
+  const v = state.current && state.current.view;
+  if (!v) return null;
+  const src = v.kind === "spectrum" ? plot && plot.ctx.canvas : $("img");
+  if (!src || !src.width) return null;
+  const c = document.createElement("canvas");
+  c.width = src.width;
+  c.height = src.height;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = v.kind === "spectrum" ? getComputedStyle(document.body).backgroundColor : "#808080";
+  ctx.fillRect(0, 0, c.width, c.height);   // jpeg has no transparency (no-data pixels, plot background)
+  ctx.drawImage(src, 0, 0);
+  return c;
+}
+
+async function writeJpeg(canvas, name, cls) {
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+  const logDir = await state.dir.getDirectoryHandle(LOG_DIR, { create: true });
+  const dst = await logDir.getDirectoryHandle(safeName(cls), { create: true });
+  const w = await (await dst.getFileHandle(name, { create: true })).createWritable();
+  await w.write(blob);
+  await w.close();
+}
+
+function loadPref(key, fallback) {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
+
+function setCopyAs(value) {
+  state.copyAs = value;
+  $("copyAs").value = value;
+  try { localStorage.setItem("spm-labeler-copy-as", value); } catch {}
 }
 
 function csvLine(values) {
@@ -640,6 +685,8 @@ async function lastHandle() {
   $("channel").onchange = (e) => { changeSetting({ channel: e.target.value }); e.target.blur(); };
   $("flatten").onchange = (e) => { changeSetting({ flatten: e.target.value }); e.target.blur(); };
   $("cmap").onchange = (e) => { changeSetting({ cmap: e.target.value }); e.target.blur(); };
+  $("copyAs").value = state.copyAs;
+  $("copyAs").onchange = (e) => { setCopyAs(e.target.value); e.target.blur(); };
   $("slice").oninput = (e) => changeSetting({ index: +e.target.value });
   $("slice").onchange = (e) => e.target.blur();
   for (const b of $("direction").children) b.onclick = () => { changeSetting({ direction: b.dataset.dir }); b.blur(); };

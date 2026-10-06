@@ -26,12 +26,14 @@ Output, inside the chosen folder:
 
 - `classified/classification_log.csv` with columns `file, type, channel, label, score, tags, note, timestamp`
   (one row per label). Files already in the log are skipped when the folder is opened again.
-- `classified/<label>/<file>`: a copy of each labeled file.
+- `classified/<label>/`: a copy of each labeled file. The sidebar's *Copy* option chooses **original file** (default)
+  or **image**: a jpeg of the current view (channel, flatten and colormap as shown; the plot for spectra),
+  named `<file name>.jpg`.
 
 Optional `labeler.json` in the folder:
 
 ```json
-{ "classes": ["Good", "Bad", "Unsure"], "notes": true, "copy_files": true }
+{ "classes": ["Good", "Bad", "Unsure"], "notes": true, "copy_files": true, "copy_as": "original" }
 ```
 
 ### Run locally (e.g. offline lab PC)
@@ -59,5 +61,3 @@ One-time setup: *Settings → Pages → Source: GitHub Actions*.
 | `py/compat.py` | stubs heavy optional imports of sidpy/SciFiReaders so they import in Pyodide |
 | `tools/build_wheels.py`, `tools/wheels.txt` | build/download the pure-Python wheels into `wheels/` |
 
-
-test comment

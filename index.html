@@ -123,6 +123,11 @@
     <label class="row" id="cmapRow"><span class="hd">Colormap <kbd>C</kbd></span><select id="cmap"></select></label>
     <label class="row" id="sliceRow"><span class="hd">Slice <kbd>,</kbd><kbd>.</kbd> <span id="sliceText"></span></span>
       <input type="range" id="slice" min="0" max="0" step="1"></label>
+    <label class="row" id="copyRow"><span class="hd">Copy to classified/&lt;label&gt;/</span>
+      <select id="copyAs">
+        <option value="original">original file</option>
+        <option value="image">image (jpeg of the current view)</option>
+      </select></label>
     <div class="labels" id="labelButtons"></div>
     <div id="noteBox" class="hidden"><input type="text" id="note" placeholder="Note for this file, Enter to keep"></div>
     <div id="noteChip" class="hidden"></div>
