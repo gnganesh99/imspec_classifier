@@ -66,6 +66,7 @@ function loadSettings() {
   const out = {};
   for (const t of Object.keys(DEFAULT_SETTINGS)) {
     out[t] = { channel: null, direction: "forward", flatten: "none", cmap: "viridis", index: null,
+               transpose: false, origin: "auto", scale: "ticks",   // View panel: display only, no re-render
                ...DEFAULT_SETTINGS[t], ...(saved[t] || {}) };
   }
   return out;
@@ -110,6 +111,7 @@ async function openFolder(handle) {
   setupFileList();
   $("message").classList.add("hidden");
   $("side").classList.remove("hidden");
+  $("hbtns").classList.remove("hidden");
   if (!state.files.length) return showMessage("No supported files in this folder", "");
   goTo(nextUndone(0));
 }
@@ -162,6 +164,10 @@ async function goTo(pos) {
   const name = state.files[pos];
   const type = fileType(name);
   state.current = { name, type, key: null, summary: null, view: null };
+  state.disp = null;
+  clearLine();
+  hideTip();
+  resetMeta("Loading…");
   $("fileName").textContent = name;
   $("fileInfo").textContent = `${pos + 1} of ${state.files.length} · ${type === "img" ? "image" : "." + type} · ${localTimestamp(new Date(state.mtimes.get(name)))}`;
   showLabelInfo(name);
@@ -173,6 +179,7 @@ async function goTo(pos) {
   } catch (e) {
     if (state.current.name !== name || e.message === "cancelled") return;
     showMessage("Could not read this file", e.message);
+    resetMeta("No metadata: this file could not be read.");
   }
   prefetch(pos);
 }
@@ -260,11 +267,13 @@ function draw() {
   $("canvasWrap").classList.toggle("hidden", !showImg);
   $("scale").classList.toggle("hidden", !showImg);
   $("cbar").classList.toggle("hidden", view.kind === "rgb");
-  if (showImg) drawImage(view, s.cmap);
+  if (showImg) drawImage(view, s);
+  else { state.disp = null; $("axes").replaceChildren(); }
   const spec = view.kind === "spectrum" ? view : view.spectrum;
   $("plot").classList.toggle("hidden", !spec);
   if (spec) drawPlot(spec, view.kind === "cube" ? view.slice_value : null, showImg);
   else if (plot) { plot.destroy(); plot = null; }
+  syncPanels(view, s);
 }
 
 function lut(name) {
@@ -275,32 +284,26 @@ function lut(name) {
 }
 const lutCache = {};
 
-function drawImage(view, cmap) {
+function drawImage(view, s) {
+  const disp = buildDisplay(view, s);   // transpose / origin applied here; ticks are drawn separately
+  state.disp = disp;
   const c = $("img");
-  c.width = view.w;
-  c.height = view.h;
+  c.width = disp.cols;
+  c.height = disp.rows;
   const ctx = c.getContext("2d");
-  const img = ctx.createImageData(view.w, view.h);
-  if (view.kind === "rgb") {
-    img.data.set(view.data);
-  } else {
-    const table = (lutCache[cmap] ||= lut(cmap));
-    const px = img.data, idx = view.data;
-    for (let i = 0, j = 0; i < idx.length; i++, j += 4) {
-      const v = idx[i];
-      if (v === 255) { px[j + 3] = 0; continue; }   // no data -> transparent
-      const k = Math.round(v * 255 / 254) * 3;
-      px[j] = table[k]; px[j + 1] = table[k + 1]; px[j + 2] = table[k + 2]; px[j + 3] = 255;
-    }
-    drawColorbar(cmap, view);
-  }
+  const img = ctx.createImageData(disp.cols, disp.rows);
+  paintImage(img, disp, view, (lutCache[s.cmap] ||= lut(s.cmap)));
+  if (view.kind !== "rgb") drawColorbar(s.cmap, view);
   ctx.putImageData(img, 0, 0);
 
-  // fit the stage, keeping the physical aspect ratio
+  // fit the stage, keeping the physical aspect ratio; axis ticks need room around the image
+  const ticks = s.scale === "ticks";
+  const pad = (state.pad = { l: ticks ? 58 : 0, t: ticks ? 8 : 0, r: ticks ? 14 : 0, b: ticks ? 38 : 0 });
+  $("imgBox").style.padding = `${pad.t}px ${pad.r}px ${pad.b}px ${pad.l}px`;
   const stage = $("stage");
   const plotH = view.spectrum ? 220 : 0;
-  const maxW = stage.clientWidth - GUTTER - (view.kind === "rgb" ? 0 : 90);
-  const maxH = stage.clientHeight - 64 - plotH;
+  const maxW = stage.clientWidth - GUTTER - (view.kind === "rgb" ? 0 : 90) - pad.l - pad.r;
+  const maxH = stage.clientHeight - 64 - plotH - pad.t - pad.b;
   const aspect = view.extent[0] / view.extent[1] || view.w / view.h;
   let w = Math.max(50, maxW), h = w / aspect;
   if (h > maxH) { h = Math.max(50, maxH); w = h * aspect; }
@@ -308,9 +311,9 @@ function drawImage(view, cmap) {
   c.style.height = Math.floor(h) + "px";
   $("cbarCanvas").style.height = Math.floor(h * 0.8) + "px";
   $("scale").textContent = view.extent_units === "px"
-    ? `${view.w} × ${view.h} px shown`
-    : `${fmt(view.extent[0])} × ${fmt(view.extent[1])} ${view.extent_units}` +
-      (view.w ? ` · ${view.w} × ${view.h} px` : "");
+    ? `${disp.cols} × ${disp.rows} px shown`
+    : `${fmt(view.extent[0])} × ${fmt(view.extent[1])} ${view.extent_units} · ${disp.cols} × ${disp.rows} px`;
+  drawOverlay();
 }
 
 function drawColorbar(cmap, view) {
@@ -381,6 +384,7 @@ function showEnd() {
   $("fileName").textContent = "";
   $("fileInfo").textContent = "";
   showLabelInfo(null);
+  resetMeta("No file selected.");
   showMessage(left ? "End of folder" : "All files labeled",
               left ? `${left} skipped file(s) still unlabeled.` : `Log: ${LOG_DIR}/${LOG_FILE}`);
   if (left) {
@@ -608,6 +612,8 @@ function snapshotView() {
   ctx.fillStyle = v.kind === "spectrum" ? getComputedStyle(document.body).backgroundColor : "#808080";
   ctx.fillRect(0, 0, c.width, c.height);   // jpeg has no transparency (no-data pixels, plot background)
   ctx.drawImage(src, 0, 0);
+  const cur = state.current;
+  if (v.kind !== "spectrum" && state.settings[cur.type].scale === "bar") drawScaleBarOnCanvas(ctx, v, c.width, c.height);
   return c;
 }
 
@@ -681,7 +687,7 @@ function onKey(e) {
     if (e.key === "Escape") { $("noteBox").classList.add("hidden"); e.target.blur(); }
     return;
   }
-  if (tag === "INPUT" && e.target.type === "text") return;
+  if (tag === "INPUT" && e.target.type !== "range" && e.target.type !== "checkbox") return;
   if (!state.dir || e.ctrlKey && e.key !== "z" || e.metaKey || e.altKey) return;
   const classes = state.config.classes;
   const view = state.current && state.current.view;
@@ -692,6 +698,7 @@ function onKey(e) {
   else if (/^[1-9]$/.test(e.key) && classes[+e.key - 1]) label(classes[+e.key - 1]);
   else if (e.key === "ArrowUp") cycleChannel(-1);
   else if (e.key === "ArrowDown") cycleChannel(1);
+  else if (e.key === "Escape") { if (state.line) clearLine(); }
   else if (e.key === " ") e.shiftKey ? goTo(nextUndone(0)) : skip();
   else if (e.key === "[") goTo(Math.max(0, state.pos - 1));
   else if (e.key === "]") { if (state.pos < state.files.length - 1) goTo(state.pos + 1); }
@@ -709,7 +716,7 @@ function onKey(e) {
   else handled = false;
   if (handled) {
     e.preventDefault();
-    if (tag === "SELECT" || tag === "BUTTON") e.target.blur();
+    if (tag === "SELECT" || tag === "BUTTON" || tag === "INPUT") e.target.blur();
   }
 }
 
@@ -777,6 +784,7 @@ async function lastHandle() {
     $("reopenBtn").onclick = () => openFolder(last);
   }
   document.addEventListener("keydown", onKey);
+  initTools();
   $("channel").onchange = (e) => { changeSetting({ channel: e.target.value }); e.target.blur(); };
   $("flatten").onchange = (e) => { changeSetting({ flatten: e.target.value }); e.target.blur(); };
   $("cmap").onchange = (e) => { changeSetting({ cmap: e.target.value }); e.target.blur(); };
@@ -815,5 +823,4 @@ async function lastHandle() {
   $("nextBtn").onclick = (e) => { goTo(state.pos + 1); e.target.blur(); };
   $("skipBtn").onclick = (e) => { skip(); e.target.blur(); };
   $("undoBtn").onclick = (e) => { undo(); e.target.blur(); };
-  window.addEventListener("resize", () => state.current && state.current.view && draw());
 })();

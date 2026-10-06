@@ -19,7 +19,6 @@ SPM_TYPES = {".sxm": "sxm", ".dat": "dat", ".3ds": "3ds"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
 MAX_DISPLAY_PIXELS = 1024   # longer image side is strided down to at most this
 CACHE_SIZE = 8              # parsed files kept in memory (current + prefetched)
-NAN_INDEX = 255             # colormap index meaning "no data"
 
 _cache = OrderedDict()
 
@@ -109,12 +108,13 @@ def _entry_from_dataset(ds):
     data = np.asarray(ds)
     axes = [_axis(ds, i) for i in range(data.ndim)]
     units, quantity = str(ds.units), str(ds.quantity)
+    meta = getattr(ds, "original_metadata", None) or {}
     if data.ndim == 1:
         return {"kind": "spectrum", "y": data.astype(float), "x": axes[0],
-                "units": units, "quantity": quantity}
+                "units": units, "quantity": quantity, "meta": meta}
     if data.ndim == 2:
         return {"kind": "image", "data": data, "y": axes[0], "x": axes[1],
-                "units": units, "quantity": quantity, "origin": "lower"}
+                "units": units, "quantity": quantity, "origin": "lower", "meta": meta}
     if data.ndim == 3:
         spatial = [i for i, a in enumerate(axes) if a["type"] == "SPATIAL"]
         other = [i for i in range(3) if i not in spatial]
@@ -122,7 +122,8 @@ def _entry_from_dataset(ds):
             spatial, other = [0, 1], [2]
         cube = np.moveaxis(data, other[0], -1)
         return {"kind": "cube", "data": cube, "y": axes[spatial[0]], "x": axes[spatial[1]],
-                "z": axes[other[0]], "units": units, "quantity": quantity, "origin": "lower"}
+                "z": axes[other[0]], "units": units, "quantity": quantity, "origin": "lower",
+                "meta": meta}
     return None
 
 
@@ -133,16 +134,22 @@ def _pixel_axis(n, name):
 def _read_image(path):
     ext = os.path.splitext(path)[1].lower()
     arr = None
+    meta = {"File type": ext.lstrip(".").upper(), "File size (bytes)": os.path.getsize(path)}
     if ext in (".tif", ".tiff"):
         # scientific tifs (16/32-bit, stacks) via SciFiReaders/tifffile; Pillow as fallback
         try:
             from SciFiReaders import ImageReader
-            arr = np.asarray(ImageReader(path).read())
+            ds = ImageReader(path).read()
+            arr = np.asarray(ds)
+            meta.update(getattr(ds, "metadata", None) or {})
+            meta.update(getattr(ds, "original_metadata", None) or {})
         except Exception:
             arr = None
     if arr is None:
         from PIL import Image
         with Image.open(path) as im:
+            meta["Mode"] = im.mode
+            meta.update({str(k): v for k, v in im.info.items() if isinstance(v, (str, int, float))})
             if im.mode in ("P", "PA", "1", "CMYK", "YCbCr", "LAB", "HSV"):
                 im = im.convert("RGBA" if "A" in im.mode or "transparency" in im.info else "RGB")
             elif im.mode == "LA":
@@ -153,8 +160,9 @@ def _read_image(path):
 
     is_rgb = arr.ndim == 3 and arr.shape[-1] in (3, 4)
     h, w = arr.shape[1:] if arr.ndim == 3 and not is_rgb else arr.shape[:2]
+    meta["Size (px)"] = "%d x %d" % (w, h)
     common = {"y": _pixel_axis(h, "y"), "x": _pixel_axis(w, "x"),
-              "units": "", "quantity": "Intensity", "origin": "upper"}
+              "units": "", "quantity": "Intensity", "origin": "upper", "meta": meta}
     channels = OrderedDict()
     if is_rgb:
         rgb = arr[..., :3]
@@ -190,7 +198,7 @@ def render(key, channel=None, direction="forward", flatten="none", index=None):
         direction = next(iter(dirs))
     entry = dirs[direction]
     out = {"channel": channel, "direction": direction, "fallback": fallback,
-           "kind": entry["kind"], "title": entry["quantity"]}
+           "kind": entry["kind"], "title": entry["quantity"], "origin": entry.get("origin", "upper")}
 
     if entry["kind"] == "spectrum":
         out.update(_spectrum(dirs))
@@ -266,10 +274,13 @@ def _rgb(entry):
 
 
 def _image(entry, data, flatten):
+    """Values in display units as float32 (row 0 = first row of the file; NaN = no data).
+
+    The UI applies transpose / origin, builds the colormap indices and can read exact
+    values back for the pixel readout and line profiles.
+    """
     img = _stride(np.asarray(data, dtype=float))
     img = apply_flatten(img, flatten)
-    if entry["origin"] == "lower":      # canvas row 0 is the top
-        img = img[::-1]
     finite = np.isfinite(img)
     if finite.any():
         vmin, vmax = np.percentile(img[finite], [1, 99])
@@ -277,13 +288,10 @@ def _image(entry, data, flatten):
             vmin, vmax = float(img[finite].min()), float(img[finite].max())
     else:
         vmin, vmax = 0.0, 1.0
-    span = (vmax - vmin) or 1.0
-    with np.errstate(invalid="ignore"):
-        idx = np.clip((img - vmin) / span * 254, 0, 254)
-    idx = np.where(finite, idx, NAN_INDEX).astype(np.uint8)
     f, u = si_scale(max(abs(vmin), abs(vmax)), entry["units"])
     h, w = img.shape
-    return dict(_extent(entry), w=w, h=h, data=idx.tobytes(),
+    values = np.where(finite, img * f, np.nan).astype(np.float32)
+    return dict(_extent(entry), w=w, h=h, data=values.tobytes(),
                 vmin=float(vmin * f), vmax=float(vmax * f), units=u)
 
 
@@ -325,3 +333,113 @@ def si_scale(max_abs, units):
         if max_abs >= scale:
             return 1.0 / scale, prefix + units
     return 1.0 / _PREFIXES[0][0], _PREFIXES[0][1] + units
+
+
+# ----------------------------------------------------------------------------- metadata
+
+def metadata(key, channel=None, direction="forward"):
+    """Header of the displayed channel: a few key facts plus every field."""
+    item = _cache[key]
+    channels = item["channels"]
+    if channel not in channels:
+        channel = next(iter(channels))
+    dirs = channels[channel]
+    if direction not in dirs:
+        direction = next(iter(dirs))
+    raw = dirs[direction].get("meta") or {}
+    flat = _flatten_meta(raw)
+    return {"facts": _facts(item["type"], flat), "all": [[k, v] for k, v in flat.items()]}
+
+
+def _fmt(v):
+    if isinstance(v, (bytes, bytearray)):
+        v = bytes(v).decode("latin-1", "replace")
+    if isinstance(v, str):
+        out = v.strip()
+    elif isinstance(v, (bool, np.bool_)):
+        out = str(bool(v))
+    elif isinstance(v, (int, np.integer)):
+        out = str(int(v))
+    elif isinstance(v, (float, np.floating)):
+        out = "%.6g" % v
+    elif isinstance(v, (list, tuple, np.ndarray)):
+        items = np.ravel(v).tolist() if isinstance(v, np.ndarray) else list(v)
+        out = "[%d values]" % len(items) if len(items) > 12 else ", ".join(_fmt(x) for x in items)
+    else:
+        out = str(v)
+    return out if len(out) <= 300 else out[:300] + "..."
+
+
+def _flatten_meta(raw, prefix="", out=None):
+    out = {} if out is None else out
+    for k, v in raw.items():
+        name = prefix + str(k)
+        if isinstance(v, dict):
+            if not any(str(o).startswith(name + ">") for o in raw):   # sxm repeats these as 'a>b' keys
+                _flatten_meta(v, name + ".", out)
+        else:
+            out[name] = _fmt(v)
+    return out
+
+
+def _facts(ftype, flat):
+    low = {k.lower(): v for k, v in flat.items()}
+
+    def get(*names):
+        for n in names:
+            if low.get(n.lower()):
+                return low[n.lower()]
+        return ""
+
+    def nums(name):
+        try:
+            return [float(t) for t in get(name).split(",")]
+        except ValueError:
+            return []
+
+    def size_nm(name):
+        v = nums(name)
+        return " x ".join("%.4g" % (x * 1e9) for x in v) + " nm" if v else ""
+
+    def pos_nm(name):
+        v = nums(name)
+        return ", ".join("%.4g" % (x * 1e9) for x in v) + " nm" if v else ""
+
+    def unit(value, u):
+        return "%s %s" % (value, u) if value else ""
+
+    channel = ""
+    if get("name"):
+        channel = "%s (%s), %s" % (get("name"), get("unit"), get("direction"))
+    if ftype == "sxm":
+        facts = [("Date", (get("rec_date") + " " + get("rec_time")).strip()),
+                 ("Channel", channel),
+                 ("Bias", unit(get("bias"), "V")),
+                 ("Setpoint", unit(get("z-controller>setpoint"), get("z-controller>setpoint unit"))),
+                 ("Scan size", size_nm("scan_range")),
+                 ("Pixels", get("scan_pixels").replace(",", " x")),
+                 ("Angle", unit(get("scan_angle"), "deg")),
+                 ("Offset", pos_nm("scan_offset")),
+                 ("Scan direction", get("scan_dir")),
+                 ("Acquisition", unit(get("acq_time"), "s")),
+                 ("Temperature", unit(get("rec_temp"), "K")),
+                 ("Comment", get("comment"))]
+    elif ftype == "dat":
+        pos = pos_nm("x (m)") and (pos_nm("x (m)") + " ; " + pos_nm("y (m)"))
+        facts = [("Experiment", get("experiment")), ("Date", get("date")), ("Channel", channel),
+                 ("Position X ; Y", pos), ("Z", pos_nm("z (m)")),
+                 ("Settling time", unit(get("settling time (s)"), "s")),
+                 ("Integration time", unit(get("integration time (s)"), "s")),
+                 ("Comment", get("comment"))]
+    elif ftype == "3ds":
+        facts = [("Experiment", get("experiment_name")), ("Start", get("start_time")),
+                 ("End", get("end_time")), ("Channel", channel),
+                 ("Grid size", size_nm("size_xy")), ("Grid pixels", get("dim_px").replace(",", " x")),
+                 ("Angle", unit(get("angle"), "deg")),
+                 ("Sweep signal", get("sweep_signal")),
+                 ("Sweep start", get("bias spectroscopy>sweep start (v)")),
+                 ("Sweep end", get("bias spectroscopy>sweep end (v)")),
+                 ("Comment", get("comment"))]
+    else:
+        facts = list(flat.items())[:6]
+    return [[k, v] for k, v in facts if v]

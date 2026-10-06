@@ -79,6 +79,9 @@ function run(job) {
   } else if (!reader.is_loaded(job.key)) {
     return { notLoaded: true };
   }
+  if (job.op === "meta") {
+    return toJs(reader.metadata.callKwargs(job.key, { channel: job.channel, direction: job.direction }));
+  }
   const summary = toJs(reader.load("", job.key));
   const s = job.settings || {};
   // JS null becomes pyodide's jsnull, not None, so unset values are left out
