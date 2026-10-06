@@ -447,6 +447,12 @@ function initTools() {
   $("metaBox").ontoggle = () => { panels.meta = $("metaBox").open; saveJson("spm-labeler-panels", panels); refreshMeta(); };
   $("metaSearch").oninput = renderMeta;
 
+  // the narrow-window panels start below the header, whatever its height
+  const header = document.querySelector("header");
+  const setHeader = () => document.documentElement.style.setProperty("--hdr", header.offsetHeight + "px");
+  new ResizeObserver(setHeader).observe(header);
+  setHeader();
+
   // redraw when the stage changes size (drawer opened / closed, window resized)
   let last = "";
   new ResizeObserver(() => {

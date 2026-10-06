@@ -70,10 +70,10 @@ Scores are never copied (the *Copy* option is hidden). `labeler.json` also keeps
 
 ```bash
 python tools/build_wheels.py
-python -m http.server 8000
+python tools/serve.py 8000
 ```
 
-Then open http://localhost:8000. Pyodide itself is still loaded from the jsDelivr CDN.
+Then open http://localhost:8000. (`tools/serve.py` is `python -m http.server` with caching switched off, so a reload always shows your latest files.) Pyodide itself is still loaded from the jsDelivr CDN.
 
 ### Deploy
 

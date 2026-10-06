@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS = {
   dat: {}, img: { flatten: "none", cmap: "gray" },
 };
 
+const APP_VERSION = "2026-10-06 · panels slide over the image on narrow windows";   // shown in the header: tells which build runs
 const $ = (id) => document.getElementById(id);
 const state = {
   dir: null, config: mergeConfig({}), userConfig: {}, mode: "binary", scoreBuf: "",
@@ -794,6 +795,8 @@ async function lastHandle() {
     $("openBtn").disabled = true;
     return;
   }
+  $("ver").textContent = "v" + APP_VERSION.split(" · ")[0];
+  $("ver").title = APP_VERSION;
   $("openBtn").onclick = () => openFolder();
   const last = await lastHandle();
   if (last) {
