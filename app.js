@@ -705,6 +705,8 @@ function onKey(e) {
     if (e.key === "Escape") { $("noteBox").classList.add("hidden"); e.target.blur(); }
     return;
   }
+  // while typing in a text field (including the settings editor) the keys belong to the field, not to the shortcuts
+  if (tag === "TEXTAREA" || e.target.isContentEditable) return;
   if (tag === "INPUT" && e.target.type !== "range" && e.target.type !== "checkbox") return;
   if (!state.dir || e.ctrlKey && e.key !== "z" || e.metaKey || e.altKey) return;
   const view = state.current && state.current.view;

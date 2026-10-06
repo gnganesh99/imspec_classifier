@@ -304,6 +304,7 @@ function openSettings() {
 function initModes() {
   $("modeSel").onchange = (e) => { setMode(e.target.value); e.target.blur(); };
   $("cfgText").oninput = checkConfigText;
+  $("cfgText").onkeydown = (e) => { if (e.key === "Escape") e.target.blur(); };   // Esc leaves the editor; then the shortcuts work again
   refreshConfigText();
   $("cfgSave").onclick = (e) => { saveConfig(); e.currentTarget.blur(); };
   $("cfgReset").onclick = (e) => {
