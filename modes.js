@@ -134,7 +134,7 @@ function buildLabelButtons() {
   }
   add("Defer", ["D"], "", () => label(DEFER_LABEL));
 
-  const keys = [["↑ ↓", "channel"], ["B", "forward / backward"], ["D", "defer (classified/deferred/)"], ["F", "flatten"], ["C", "colormap"],
+  const keys = [["↑ ↓", "channel"], ["B", "forward / backward"], ["D", "defer (labeled/deferred/)"], ["F", "flatten"], ["C", "colormap"],
                 ["PgUp PgDn", "slice (3ds, stacks)"], ["Space", "skip"], ["[ ]", "previous / next file"],
                 ["Home End", "first / last file"], ["⇧ Space", "first unlabeled"], ["Z", "undo last entry"]];
   if (mode === "score") keys.unshift(["0-9 . -", "type a score"], ["Enter", "save the score"], ["Backspace", "edit"], ["Esc", "clear what you typed"]);
@@ -233,7 +233,7 @@ function modeKey(e) {
 
 // --------------------------------------------------------------------------- settings (labeler.json)
 async function writeJson(name, obj) {
-  const dir = await state.dir.getDirectoryHandle(LOG_DIR, { create: true });   // classified/
+  const dir = await state.dir.getDirectoryHandle(LOG_DIR, { create: true });   // labeled/
   const fh = await dir.getFileHandle(name, { create: true });
   const w = await fh.createWritable();
   await w.write(JSON.stringify(obj, null, 2) + "\n");

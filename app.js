@@ -2,11 +2,11 @@
 // Python (worker.js + py/reader.py) parses files; all folder IO happens here.
 "use strict";
 
-const LOG_DIR = "classified";
+const LOG_DIR = "labeled";
 const LOG_FILE = "classification_log.csv";
 // one row per file and mode: binary / multiclass rows fill label (+ class_id), score rows fill score
 const LOG_COLUMNS = ["file", "type", "channel", "mode", "label", "class_id", "score", "tags", "note", "timestamp"];
-const DEFER_LABEL = "Deferred";   // always available on key D; copies go to classified/deferred/
+const DEFER_LABEL = "Deferred";   // always available on key D; copies go to labeled/deferred/
 const COPY_MODES = ["none", "original", "image"];
 const SUPPORTED = /\.(sxm|dat|3ds|jpe?g|png|bmp|gif|webp|tiff?)$/i;
 const PREFETCH = 3;
@@ -115,8 +115,8 @@ async function openFolder(handle) {
   goTo(nextUndone(0));
 }
 
-// settings live in classified/ (nothing else is written to the data folder). A labeler.json left in the data
-// folder by an earlier version is still read when there is none in classified/, and is never changed or deleted.
+// settings live in labeled/ (nothing else is written to the data folder). A labeler.json left in the data
+// folder by an earlier version is still read when there is none in labeled/, and is never changed or deleted.
 async function readJson(name) {
   const dirs = [];
   try { dirs.push(await state.dir.getDirectoryHandle(LOG_DIR)); } catch {}

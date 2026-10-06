@@ -15,7 +15,7 @@ and `jpg / png / tif / bmp / gif / webp` images.
 | `→` / `←`, `1` / `0` | **Binary mode**: first / second class; no other number key does anything |
 | `1`–`9`, `0` | **Multiclass mode**: the class with that key (see below) |
 | `0`–`9` `.` `-`, `Enter` | **Score mode**: just start typing a number (negatives and decimals are fine), `Enter` saves, `Backspace` edits, `Esc` clears |
-| `D` | defer, in every mode: logged as `Deferred`, copied to `classified/deferred/` (not in Score mode) |
+| `D` | defer, in every mode: logged as `Deferred`, copied to `labeled/deferred/` (not in Score mode) |
 | `Space` | skip (stays unlabeled) |
 | `[` / `]` | previous / next file, labeled or not (also the ‹ › buttons beside the image); a labeled file shows its label, and pressing a label key **overwrites** it |
 | `Home` / `End` | first / last file |
@@ -42,12 +42,12 @@ row (or press Enter in the search box) to jump there. Jumping does not label any
 
 Output, inside the chosen folder:
 
-- `classified/classification_log.csv` with columns `file, type, channel, mode, label, class_id, score, tags, note, timestamp`:
+- `labeled/classification_log.csv` with columns `file, type, channel, mode, label, class_id, score, tags, note, timestamp`:
   **one row per file and mode**, all modes in the same log. Binary and multiclass rows fill `label` (multiclass also
   `class_id`), score rows fill `score`. Each mode keeps its own progress: files already in the log for the current
   mode are skipped when the folder is opened again. Older logs without `mode` / `class_id` are upgraded automatically
   (their rows count as binary).
-- `classified/<label>/`: copies of labeled files, depending on the sidebar's *Copy* option: **do not copy**
+- `labeled/<label>/`: copies of labeled files, depending on the sidebar's *Copy* option: **do not copy**
   (default; only the CSV is written), **original file**, or **image**: a jpeg of the current view (channel,
   flatten and colormap as shown; the plot for spectra, in the current light/dark theme), named `<file name>.jpg`.
 
@@ -55,7 +55,7 @@ Output, inside the chosen folder:
 
 Pick the mode in the header, top left (**Binary** by default, **Multiclass** or **Score**). The settings box under
 **Tools → Labeling settings** shows only the options of the current mode, validated while you type; *Save to folder*
-writes them to `classified/labeler.json` (loaded when you open the folder again, together with the last mode). Nothing else is written to the data folder itself; a `labeler.json` left there by an earlier version is still read if `classified/` has none.
+writes them to `labeled/labeler.json` (loaded when you open the folder again, together with the last mode). Nothing else is written to the data folder itself; a `labeler.json` left there by an earlier version is still read if `labeled/` has none.
 
 | Mode | Settings box | Written to the log |
 | --- | --- | --- |

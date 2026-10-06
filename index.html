@@ -176,8 +176,8 @@
     <div id="message">
       <h2>Label SPM data and images in a local folder</h2>
       <p>Nanonis <code>.sxm</code>, <code>.dat</code>, <code>.3ds</code> and jpg / png / tif / bmp images.
-         Labels go to <code>classified/classification_log.csv</code> in the folder you pick;
-         files are copied to <code>classified/&lt;label&gt;/</code>.</p>
+         Labels go to <code>labeled/classification_log.csv</code> in the folder you pick;
+         files are copied to <code>labeled/&lt;label&gt;/</code>.</p>
       <p><button id="openBtn" class="primary">Open folder</button>
          <button id="reopenBtn" class="hidden"></button></p>
       <p id="browserWarn" class="hidden">This browser cannot open local folders. Please use Chrome or Edge.</p>
@@ -266,7 +266,7 @@
       <button data-dir="forward">Forward</button><button data-dir="backward">Backward</button></div></div>
     <label class="row" id="sliceRow"><span class="hd">Slice <kbd>PgUp</kbd><kbd>PgDn</kbd> <span id="sliceText"></span></span>
       <input type="range" id="slice" min="0" max="0" step="1"></label>
-    <label class="row" id="copyRow"><span class="hd">Copy to classified/&lt;label&gt;/</span>
+    <label class="row" id="copyRow"><span class="hd">Copy to labeled/&lt;label&gt;/</span>
       <select id="copyAs">
         <option value="none">do not copy (log only)</option>
         <option value="original">original file</option>
