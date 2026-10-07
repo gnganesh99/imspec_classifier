@@ -4,7 +4,7 @@ A web app to label, classify and score images and spectra (Nanonis `.sxm` / `.da
 ## The web app
 
 <p align="center">
-  <a href="https://gnganesh99.github.io/imspec_labeler/"><img src="docs/open-app.svg" alt="Open ImSpec Labeler" width="360"></a>
+  <a href="https://gnganesh99.github.io/imspec_labeler/"><img src="docs/open-app.svg" alt="Open ImSpec Labeler" width="180"></a>
 </p>
 <p align="center"><sub>Chrome or Edge · click <em>Open folder</em>, then press keys</sub></p>
 
