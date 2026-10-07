@@ -8,16 +8,33 @@ A web app to label, classify and score images and spectra (Nanonis `.sxm` / `.da
 </p>
 <p align="center"><sub>Chrome or Edge · click <em>Open folder</em>, then press keys</sub></p>
 
-Nothing to install: Python ([Pyodide](https://pyodide.org)) runs in the browser and reads files with the
+<ins>**Nothing to install**</ins>: Python ([Pyodide](https://pyodide.org)) runs in the browser and reads files with the
 [SciFiReaders fork](https://github.com/gnganesh99/SciFiReaders). Files never leave your computer.
 
 Supported: Nanonis `.sxm` (images), `.dat` (spectra), `.3ds` (grid spectroscopy, bias slice + mean spectrum),
 and `jpg / png / tif / bmp / gif / webp` images.
 
+### Modes and settings
+
+Pick the mode in the header, top left (**Binary** by default, **Multiclass** or **Score**). The settings box under
+**Tools → Labeling settings** shows only the options of the current mode, validated while you type; *Save to folder*
+writes them to `labeled/labeler.json` (loaded when you open the folder again, together with the last mode). Nothing else is written to the data folder itself; a `labeler.json` left there by an earlier version is still read if `labeled/` has none.
+
+| Mode | Settings box | Written to the log |
+| --- | --- | --- |
+| **Binary** | `{ "classes": [ {"name": "Good", "id": 1}, {"name": "Bad", "id": 0} ] }`: exactly two classes, e.g. Good / Bad, Yes / No, High / Low; plain names work too (`["Yes", "No"]`) | `label` = name, `class_id` = id (default 1 for the first class, 0 for the second) |
+| **Multiclass** | `{ "start": 1, "classes": ["one", "two", {"name": "three", "id": 30}] }`: up to 10 classes; `start` 1 gives the keys 1-9 then 0, `start` 0 gives 0-9 | `label` = name, `class_id` = id (default: the number of its key) |
+| **Score** | `{ "min": -10, "max": 10 }`: optional limits (`null` = none) | `score` = the number you typed (nothing is written until `Enter`) |
+
+Scores are never copied (the *Copy* option is hidden). `labeler.json` also keeps the other modes' settings, `notes` and
+`copy_as`, untouched when you save one mode.
+
+### Keyboard shortcuts
+
 | Key | Action |
 | --- | --- |
 | `→` / `←`, `1` / `0` | **Binary mode**: first / second class; no other number key does anything |
-| `1`–`9`, `0` | **Multiclass mode**: the class with that key (see below) |
+| `1`–`9`, `0` | **Multiclass mode**: the class with that key (see the modes above) |
 | `0`–`9` `.` `-`, `Enter` | **Score mode**: just start typing a number (negatives and decimals are fine), `Enter` saves, `Backspace` edits, `Esc` clears |
 | `D` | defer, in every mode: logged as `Deferred`, copied to `labeled/deferred/` (not in Score mode) |
 | `Space` | skip (stays unlabeled) |
@@ -55,21 +72,6 @@ Output, inside the chosen folder:
 - `labeled/<label>/`: copies of labeled files, depending on the sidebar's *Copy* option: **do not copy**
   (default; only the CSV is written), **original file**, or **image**: a jpeg of the current view (channel,
   flatten and colormap as shown; the plot for spectra, in the current light/dark theme), named `<file name>.jpg`.
-
-### Modes and settings
-
-Pick the mode in the header, top left (**Binary** by default, **Multiclass** or **Score**). The settings box under
-**Tools → Labeling settings** shows only the options of the current mode, validated while you type; *Save to folder*
-writes them to `labeled/labeler.json` (loaded when you open the folder again, together with the last mode). Nothing else is written to the data folder itself; a `labeler.json` left there by an earlier version is still read if `labeled/` has none.
-
-| Mode | Settings box | Written to the log |
-| --- | --- | --- |
-| **Binary** | `{ "classes": [ {"name": "Good", "id": 1}, {"name": "Bad", "id": 0} ] }`: exactly two classes, e.g. Good / Bad, Yes / No, High / Low; plain names work too (`["Yes", "No"]`) | `label` = name, `class_id` = id (default 1 for the first class, 0 for the second) |
-| **Multiclass** | `{ "start": 1, "classes": ["one", "two", {"name": "three", "id": 30}] }`: up to 10 classes; `start` 1 gives the keys 1-9 then 0, `start` 0 gives 0-9 | `label` = name, `class_id` = id (default: the number of its key) |
-| **Score** | `{ "min": -10, "max": 10 }`: optional limits (`null` = none) | `score` = the number you typed (nothing is written until `Enter`) |
-
-Scores are never copied (the *Copy* option is hidden). `labeler.json` also keeps the other modes' settings, `notes` and
-`copy_as`, untouched when you save one mode.
 
 ### Run locally (e.g. offline lab PC)
 
