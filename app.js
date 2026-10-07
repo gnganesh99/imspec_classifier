@@ -1,11 +1,12 @@
-// SPM Labeler UI: folder access, keyboard labeling, canvas / uPlot rendering.
+// ImSpec Labeler UI: folder access, keyboard labeling, canvas / uPlot rendering.
 // Python (worker.js + py/reader.py) parses files; all folder IO happens here.
 "use strict";
 
 const LOG_DIR = "labeled";
 const LOG_FILE = "classification_log.csv";
 // one row per file and mode: binary / multiclass rows fill label (+ class_id), score rows fill score
-const LOG_COLUMNS = ["file", "type", "channel", "mode", "label", "class_id", "score", "tags", "note", "timestamp"];
+// flatten: the flatten type applied to the image when the entry was made (empty for spectra)
+const LOG_COLUMNS = ["file", "type", "channel", "flatten", "mode", "label", "class_id", "score", "tags", "note", "timestamp"];
 const DEFER_LABEL = "Deferred";   // always available on key D; copies go to labeled/deferred/
 const COPY_MODES = ["none", "original", "image"];
 const SUPPORTED = /\.(sxm|dat|3ds|jpe?g|png|bmp|gif|webp|tiff?)$/i;
@@ -18,7 +19,7 @@ const DEFAULT_SETTINGS = {
   dat: {}, img: { flatten: "none", cmap: "gray" },
 };
 
-const APP_VERSION = "2026-10-06 · panels slide over the image on narrow windows";   // shown in the header: tells which build runs
+const APP_VERSION = "2026-10-07 · flatten column in the log";   // shown in the header: tells which build runs
 const $ = (id) => document.getElementById(id);
 const state = {
   dir: null, config: mergeConfig({}), userConfig: {}, mode: "binary", scoreBuf: "",
@@ -501,8 +502,10 @@ function record(fields) {
     channel = view.kind === "spectrum" || dirs.length < 2 ? view.channel : `${view.channel} ${view.direction}`;
   }
   const mode = state.mode;
+  // none / offset (line offset) / line (line-wise fit) / plane: only images have one (spectra and colour photos do not)
+  const flatten = view && (view.kind === "image" || view.kind === "cube") ? state.settings[cur.type].flatten : "";
   const row = {
-    file: cur.name, type: cur.type, channel, mode, label: "", class_id: "", score: "", tags: "",
+    file: cur.name, type: cur.type, channel, flatten, mode, label: "", class_id: "", score: "", tags: "",
     note: state.note, timestamp: localTimestamp(), ...fields,
   };
   state.note = "";

@@ -1,9 +1,9 @@
-# imspec_classifier
-A classifier app and model for images and spectra.
+# ImSpec Labeler
+A web app to label, classify and score images and spectra (Nanonis `.sxm` / `.dat` / `.3ds` and ordinary image files) in a local folder.
 
-## SPM Labeler (web app)
+## The web app
 
-**https://gnganesh99.github.io/imspec_classifier/** — open in Chrome or Edge, click *Open folder*, press keys.
+**https://gnganesh99.github.io/imspec_labeler/** — open in Chrome or Edge, click *Open folder*, press keys.
 Nothing to install: Python ([Pyodide](https://pyodide.org)) runs in the browser and reads files with the
 [SciFiReaders fork](https://github.com/gnganesh99/SciFiReaders). Files never leave your computer.
 
@@ -42,11 +42,12 @@ row (or press Enter in the search box) to jump there. Jumping does not label any
 
 Output, inside the chosen folder:
 
-- `labeled/classification_log.csv` with columns `file, type, channel, mode, label, class_id, score, tags, note, timestamp`:
+- `labeled/classification_log.csv` with columns `file, type, channel, flatten, mode, label, class_id, score, tags, note, timestamp`:
   **one row per file and mode**, all modes in the same log. Binary and multiclass rows fill `label` (multiclass also
   `class_id`), score rows fill `score`. Each mode keeps its own progress: files already in the log for the current
   mode are skipped when the folder is opened again. Older logs without `mode` / `class_id` are upgraded automatically
-  (their rows count as binary).
+  (their rows count as binary). `flatten` is the flatten type that was applied to the image when the entry was made
+  (`none`, `offset` = line offset, `line` = line-wise fit, `plane`); it is empty for spectra and colour photos.
 - `labeled/<label>/`: copies of labeled files, depending on the sidebar's *Copy* option: **do not copy**
   (default; only the CSV is written), **original file**, or **image**: a jpeg of the current view (channel,
   flatten and colormap as shown; the plot for spectra, in the current light/dark theme), named `<file name>.jpg`.
