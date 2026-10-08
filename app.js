@@ -561,7 +561,10 @@ function undo() {
 }
 
 function queueIO(fn, errorText) {
-  ioChain = ioChain.then(fn).catch((e) => toast(`${errorText}: ${e.message}`));
+  // a failed write is most often the log (classification_log.csv) being open in Excel or another program
+  ioChain = ioChain.then(fn).catch((e) => toast(
+    `${errorText}: ${String(e.message).replace(/\.$/, "")}. This could be due to the CSV being open in another program (such as Excel). ` +
+    "Close it and continue.", 12000));
   return ioChain;
 }
 
@@ -764,12 +767,12 @@ function keepNote() {
 }
 
 let toastTimer;
-function toast(text) {
+function toast(text, ms = 1800) {
   const t = $("toast");
   t.textContent = text;
   t.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), 1800);
+  toastTimer = setTimeout(() => t.classList.remove("show"), ms);
 }
 
 function setStatus(text) { $("status").textContent = text; }
