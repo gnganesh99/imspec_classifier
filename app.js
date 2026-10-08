@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS = {
   dat: {}, img: { flatten: "none", cmap: "gray" },
 };
 
-const APP_VERSION = "2026-10-07 · flatten column in the log";   // shown in the header: tells which build runs
+const APP_VERSION = "2026-10-08";   // shown in the header: tells which build runs
 const $ = (id) => document.getElementById(id);
 const state = {
   dir: null, config: mergeConfig({}), userConfig: {}, mode: "binary", scoreBuf: "",
